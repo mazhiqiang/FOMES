@@ -18,7 +18,7 @@
 #define UPDATE_ERROR_RETRY 3
 #define UPDATE_INVALID_RETRY 3
 
-#define DOWNLOAD_IS_READY 0x54540000
+#define DOWNLOAD_IS_READY 0xffff0000
 #define DOWNLOAD_INFORM_SIZE 4
 #define DOWNLOAD_DATA_ADDRESS_OFFSET 0
 //#define DOWNLOAD_BACK_ADDRESS_OFFSET 0x1FFC
@@ -58,7 +58,14 @@ enum errorCode{
 	err_MS_Pull_Invalid,
 	err_MS_IS_ABORT
 };//2014.08.26
-
+enum LinkState
+{
+	InterfaceWrite,
+	InterfateRead,
+	RAMWrite,
+	RAMRead,
+	Idle
+};
 //链路层所管理内存数据的信息的结构体
 //uc* puData:	数据所在内存的地址
 //i iCmd	:	生成的命令ID
@@ -100,11 +107,14 @@ private:
 		m_bDualRamIsReady = true;
 		m_uicmdid = 0;
 		m_bIsInited = false;
-		m_bSynClock = WRITE;
-		m_bAsyClock = false;
+		m_bSynLock = WRITE;
+		m_bAsyLock = false;
 		m_ucInvalidRetry = 0;
 		m_ucErrorRetry = 0;
 		m_bInterfaceLock = UNLOCKED;
+		m_bGreenPath = LOCKED;
+		m_bGreenPathStatus = WRITE;
+		Status = Idle;
 	}
 	CSingleton(const CSingleton &);
 	CSingleton & operator = (const CSingleton &);
@@ -141,9 +151,12 @@ private:
 	unsigned char m_ucReadRetry;
 public:
 	
-	bool m_bSynClock;//同步锁，ture为写入状态，false为读状态
-	bool m_bAsyClock;//异步锁，true为挂起状态，false为正常状态
+	bool m_bSynLock;//同步锁，ture为写入状态，false为读状态
+	bool m_bAsyLock;//异步锁，true为挂起状态，false为正常状态
 	bool m_bInterfaceLock;
+	bool m_bGreenPath;
+	bool m_bGreenPathStatus;
+	LinkState Status;
 	//static BufData sBufM;
 	static CSingleton & GetInstance()
 	{
@@ -181,6 +194,10 @@ public:
 	errorCode fnFreeAllMemoryAndData();
 
 	errorCode fnBuffPull(int ComdID,BYTE *m_FeedBackInfo,int len,int Waittime);
+	errorCode fnFakeAbortTimer();
+	errorCode fnFakeRestartTimer();
+	errorCode fnManualIntterupt();//人工中断，用来开辟绿色通道
+	errorCode fnSendToBuffer(BYTE *m_ControlComd,int len,int *ComdID);
 };
 
 

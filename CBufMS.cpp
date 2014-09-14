@@ -22,7 +22,7 @@ errorCode CSingleton::fnInit()
 			return (PCIPro.fnPciStartThread())?err_Success:err_PCI_Intterupt_Invalid;
 		}
 	}
-	return err_PCI_Init_Failed;
+	return err_Success;
 }
 bool CSingleton::fnSetLockM(bool tmp)
 {
@@ -102,23 +102,20 @@ int CSingleton::fnGetTextTimerSlaveID()
 //将输入的结构体或结构体特征进行链路管理
 errorCode CSingleton::fnBuffRoute(sTestData* sBuf,unsigned int uioffset)
 {
-	if(LINK.m_bInterfaceLock == UNLOCKED)
-	{
-		LINK.m_bInterfaceLock = LOCKED;
 	unsigned char* puiTestData = (unsigned char*)sBuf;
 	UCHAR uiTestLen = sizeof(*sBuf);
 
 	if (uiTestLen<0||m_bLockMaster)
 	{
-		LINK.m_bInterfaceLock = UNLOCKED;
+		//LINK.m_bInterfaceLock = UNLOCKED;
 		return err_MS_Memory_Route_Invalid;
 	}
 	m_bLockMaster = true;
 	unsigned int uicount = 0;
 	unsigned char* buf = new unsigned char[uiTestLen];
-	if(*buf == NULL)
+	if(buf == NULL)
 	{
-		LINK.m_bInterfaceLock = UNLOCKED;
+		//LINK.m_bInterfaceLock = UNLOCKED;
 		return err_MS_Memory_Route_Invalid;
 	}
 	for (uicount = 0;uicount < uiTestLen;uicount++)
@@ -131,50 +128,63 @@ errorCode CSingleton::fnBuffRoute(sTestData* sBuf,unsigned int uioffset)
 	m_sCurMaster.iCmd = m_uicmdid;
 	m_sCurMaster.iLength = uiTestLen;
 	m_sCurMaster.uiOffset = uioffset;
-	m_vBufMaster.push_back(m_sCurMaster);
-
-	m_bLockMaster = false;
-	m_uicmdid++;
-	LINK.m_bInterfaceLock = UNLOCKED;
-	return err_Success;
-	}
-	return err_MS_Push_Invalid;
+	if(RAMWrite != LINK.Status)
+	{	//操作MVector，防止过程接口对其进行操作
+		LINK.Status = InterfaceWrite;
+		m_vBufMaster.push_back(m_sCurMaster);
+		m_bLockMaster = false;
+		m_uicmdid++;
+		LINK.Status = Idle;
+		return err_Success;
+	}else
+	{
+		delete[] buf;
+		buf = NULL;
+		return err_MS_Push_Invalid;
+	}	
 }
 errorCode CSingleton::fnBuffRoute(unsigned char* m_ControlComd,int len,int* ComdID,unsigned int uioffset)
 {
-	if(LINK.m_bInterfaceLock == UNLOCKED)
+
+	if (m_bLockMaster||len<0)
 	{
-		LINK.m_bInterfaceLock = LOCKED;
-		if (m_bLockMaster||len<0)
-		{
-			LINK.m_bInterfaceLock = UNLOCKED;
-			return err_MS_Memory_Route_Invalid;
-		}
-		m_bLockMaster = true;
-		unsigned int uicount = 0;
-		unsigned char* buf = new unsigned char[len];
-		if(*buf == NULL)return err_MS_Memory_Route_Invalid;
-		for (uicount = 0;uicount < len;uicount++)
-		{
-			*(buf+uicount) = *(m_ControlComd+uicount);
-		}
+		//LINK.m_bInterfaceLock = UNLOCKED;
+		return err_MS_Memory_Route_Invalid;
+	}
+	m_bLockMaster = true;
+	unsigned int uicount = 0;
+	unsigned char* buf = new unsigned char[len];
+	if(buf == NULL)return err_MS_Memory_Route_Invalid;
+	for (uicount = 0;uicount < len;uicount++)
+	{
+		*(buf+uicount) = *(m_ControlComd+uicount);
+	}
 
-		m_sCurMaster.pucData = buf;
-		m_sCurMaster.iCmd = m_uicmdid;
-		m_sCurMaster.iLength = len;
-		m_sCurMaster.uiOffset = uioffset;
+	m_sCurMaster.pucData = buf;
+	m_sCurMaster.iCmd = m_uicmdid;
+	m_sCurMaster.iLength = len;
+	m_sCurMaster.uiOffset = uioffset;
+	if(RAMWrite != LINK.Status)//LINK并未操作MVector
+	{
+		LINK.Status = InterfaceWrite;
 		m_vBufMaster.push_back(m_sCurMaster);
-
+		*ComdID = m_uicmdid;//返回CMDID
 		m_bLockMaster = false;
 		m_uicmdid++;
-		LINK.m_bInterfaceLock = UNLOCKED;
+		//LINK.m_bInterfaceLock = UNLOCKED;
+		LINK.Status = Idle;	//状态切换回闲
+		return err_Success;
+	}else
+	{
+		delete[] buf;
+		buf = NULL;
+		return err_MS_Push_Invalid;
 	}
-	return err_Success;
 	//释放内存时，需要考虑释放的内存大小。2014.08.15
 }
 
 
-errorCode CSingleton::fnBuffTrans()
+errorCode CSingleton::fnBuffTrans()//不在绿色通道情况下，常规情况，正常数据管道起作用
 {
 	if (LINK.fnGetLockS())
 	{
@@ -188,20 +198,29 @@ errorCode CSingleton::fnBuffTrans()
 		|| m_ucErrorRetry >= UPDATE_INVALID_RETRY||m_ucReadRetry >= UPDATE_ERROR_RETRY)
 	{
 		//这里捅上去,sendmessage
+		//目前出错的解决办法是清空内存，这样的错误来自硬件
 		if(err_Success == LINK.fnFreeAllMemoryAndData())
 		{
-			LINK.m_bSynClock = WRITE;//写状态
+			LINK.m_bSynLock = WRITE;//写状态
 			//LINK.m_bAsyClock = false;//解锁
 			m_ucInvalidRetry = 0;
 			m_ucErrorRetry = 0;
 			m_ucReadRetry = 0;
 		}
+		if (m_ucInvalidRetry >= UPDATE_ERROR_RETRY )//校验码出错
+		{
+		}else if (m_ucErrorRetry >= UPDATE_INVALID_RETRY)//指令无意义
+		{
+		}else if (m_ucReadRetry >= UPDATE_ERROR_RETRY)//PCI通道有错
+		{
+		}
+
 		return err_MS_IS_ABORT;
 	}
 	//锁定向硬件写数据的状态
 	LINK.fnSetLockS(false);//没启用
 	ULONG ulFeedbackData;//获取双口RAM数据
-	if(LINK.m_bAsyClock)
+	if(LINK.m_bAsyLock)
 	{
 		LINK.fnSetLockS(false);
 		return err_MS_IS_ABORT;
@@ -211,13 +230,13 @@ errorCode CSingleton::fnBuffTrans()
 		if(m_bDualRamIsReady)
 		{//读状态，读同步锁的状态，同步锁为读方可进行读状态
 
-		if (m_bSynClock == READ)
+		if (m_bSynLock == READ)
 		{
 			m_bDualRamIsReady = false;//切换双口RAM的读写状态，防止多次操作
 			if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_BACK_ADDRESS_OFFSET,ulFeedbackData))
 			{			
 				
-				switch (ulFeedbackData&0x0000FFFF)
+ 				switch (ulFeedbackData&0x0000FFFF)
 				{
 				case UPDATE_FEEDBACK_INFO_IS_READY://指定的位置有数据，可以进行取数据；
 					{
@@ -265,7 +284,12 @@ errorCode CSingleton::fnBuffTrans()
 							{
 								//校验码正确，将数据写入上传队列，并保有内存
 								updateData.pucData = pucData;
-								LINK.m_vBufSlave.push_back(updateData);
+								if(InterfateRead != LINK.Status)//写入SVector，此时不应该为InterfaceRead状态
+								{
+									LINK.Status = RAMRead;
+									LINK.m_vBufSlave.push_back(updateData);
+									LINK.Status = Idle;
+								}else return err_PCI_Read_Memory_Invalid;
 							}
 						}else  
 						{
@@ -282,16 +306,22 @@ errorCode CSingleton::fnBuffTrans()
 						pucRemark = NULL;
 
 						//完成读任务，此时需要将保有的信息及内存释放
-						if(!(err_Success==LINK.fnFreeMemory(&m_vBufMaster[0])&&err_Success==LINK.fnPopBuffMaster()))
+						if(InterfaceWrite != LINK.Status)
 						{
-							m_bDualRamIsReady = true;
-							m_ucReadRetry++;//释放内存出现问题
-							return err_MS_Memory_Free_Invalid;
+							LINK.Status = RAMWrite;//释放内存，要操作MVector
+							if(!(err_Success==LINK.fnFreeMemory(&m_vBufMaster[0])&&err_Success==LINK.fnPopBuffMaster()))
+							{
+								LINK.Status = Idle;
+								m_bDualRamIsReady = true;
+								m_ucReadRetry++;//释放内存出现问题
+								return err_MS_Memory_Free_Invalid;
+							}
+							LINK.Status = Idle;
 						}
 						m_ucInvalidRetry = 0;
 						m_ucErrorRetry = 0;
 						m_ucReadRetry = 0;//清除读写重试次数
-						m_bSynClock = WRITE;
+						m_bSynLock = WRITE;
 						return err_Success;
 					}
 					break;
@@ -299,7 +329,7 @@ errorCode CSingleton::fnBuffTrans()
 					{
 						LINK.m_ucErrorRetry++;
 						m_bDualRamIsReady = true;
-						m_bSynClock = WRITE;
+						m_bSynLock = WRITE;
 						return err_PCI_Read_Memory_Invalid;
 					}
 					break;
@@ -320,7 +350,7 @@ errorCode CSingleton::fnBuffTrans()
 			}else
 			{
 				if(m_ucReadRetry < READ_TRY)LINK.m_ucReadRetry++;
-				else m_bSynClock = READ;//这里是个雷
+				else m_bSynLock = READ;//这里是个雷
 				m_bDualRamIsReady = true;
 				return err_PCI_Read_Memory_Invalid;
 			}
@@ -328,12 +358,16 @@ errorCode CSingleton::fnBuffTrans()
 		//写状态
 		else
 		{
+			if(InterfaceWrite != LINK.Status)
+			{
+				LINK.Status = RAMWrite;//操作MVector
 				if (0 != LINK.m_vBufMaster.size())
 				{	
 					m_bDualRamIsReady = false;//向双口RAM写，并锁定状态
 					if(err_Success==fnHardProc(&m_vBufMaster[0])) 
 					{
-						LINK.m_bSynClock = READ;
+						LINK.Status = Idle;
+						LINK.m_bSynLock = READ;
 						LINK.fnSetLockS(false);
 						m_bDualRamIsReady = true;
 
@@ -343,6 +377,7 @@ errorCode CSingleton::fnBuffTrans()
 						return err_Success;
 					}else
 					{
+						LINK.Status = Idle;
 						LINK.fnSetLockS(false);
 						m_bDualRamIsReady = true;
 						m_ucInvalidRetry++;
@@ -350,11 +385,12 @@ errorCode CSingleton::fnBuffTrans()
 					}					
 				}else 
 				{
+					LINK.Status = Idle;
 					m_bDualRamIsReady = true;
 					//m_ucInvalidRetry++;
 					return err_PCI_Write_Memory_Invalid;
 				}
-
+			}
 		}
 	}else return err_MS_IS_ABORT;
 }
@@ -464,9 +500,9 @@ errorCode CSingleton::fnFreeAllMemoryAndData()
 }
 errorCode CSingleton::fnBuffPull(const UINT uicmdid,BufData* BD)
 {
-// 	if(LINK.m_bInterfaceLock == UNLOCKED)
-// 	{
-/*		LINK.m_bInterfaceLock = LOCKED;*/
+	if(RAMRead != LINK.Status)
+	{
+		LINK.Status = InterfateRead;
 		std::vector<BufData>::iterator itr = m_vBufSlave.begin();
 		while(itr != m_vBufSlave.end())
 		{
@@ -474,15 +510,15 @@ errorCode CSingleton::fnBuffPull(const UINT uicmdid,BufData* BD)
 			{
 				*BD = *itr;
 				itr = m_vBufSlave.erase(itr);
-/*				LINK.m_bInterfaceLock = UNLOCKED;*/
+				LINK.Status = Idle;
 				return err_Success;
 			}
 			itr++;
 		}
-/*		LINK.m_bInterfaceLock = UNLOCKED;*/
+		LINK.Status = Idle;
 		return err_MS_Pull_Invalid;
-// 	}
-// 	return err_MS_Pull_Invalid;
+	}
+	return err_MS_Pull_Invalid;
 }
 CString CSingleton::fnExData(BufData* BD)
 {
@@ -528,15 +564,15 @@ void CSingleton::fnEnableIntterupt()
 void PASCAL CallBackFunc(UINT wTimerID, UINT msg,DWORD dwUser,DWORD dwl,DWORD dw2) 
 {
 	LINK.fnSetWindowText(LINK.fnGetCWnd(),LINK.fnGetTimerSlaveCount(),LINK.fnGetTextTimerSlaveID());
-	if(LINK.m_bInterfaceLock == UNLOCKED)
+	if(LOCKED == LINK.m_bGreenPath)
 	{
-		LINK.m_bInterfaceLock = LOCKED;
-		if(LINK.m_bAsyClock)
+		//LINK.m_bInterfaceLock = LOCKED;
+		if(LINK.m_bAsyLock)
 		{
-			if(err_Success == LINK.fnFreeAllMemoryAndData())
+			//if(err_Success == LINK.fnFreeAllMemoryAndData())
 			{
-				LINK.m_bSynClock = WRITE;//写状态
-				LINK.m_bAsyClock = false;//解锁
+				//LINK.m_bSynLock = WRITE;//写状态
+				LINK.m_bAsyLock = false;//解锁
 			}
 			//else SendMessage
 		}else
@@ -559,9 +595,20 @@ void PASCAL CallBackFunc(UINT wTimerID, UINT msg,DWORD dwUser,DWORD dwl,DWORD dw
 				}
 			}
 		}
-		LINK.m_bInterfaceLock = UNLOCKED;
+		//LINK.m_bInterfaceLock = UNLOCKED;
 	}
-	
+	else{
+		//向指定RAM区域写入数据，通知底层硬件
+		//这个地方应该设计一个状态机,代码没设计好
+		if (WRITE == LINK.m_bGreenPathStatus)
+		{
+
+		}
+		else if(READ == LINK.m_bGreenPathStatus)
+		{
+			LINK.m_bInterfaceLock = UNLOCKED;//绿色通道执行完毕，解锁正常工作
+		}
+	}
 }
 bool InitTimerCheckSlave()
 {
@@ -578,58 +625,80 @@ errorCode CSingleton::fnReleasePCI()
 //接口测试尚未完整测试，原因，过程控制代码无法满足轮询条件
 errorCode CSingleton::fnBuffPull(int ComdID,BYTE *m_FeedBackInfo,int len,int Waittime)
 {
-	std::vector<BufData>::iterator itr = m_vBufSlave.begin();
-	while(itr != m_vBufSlave.end())
+	if(RAMRead != LINK.Status)
 	{
-		if (ComdID == itr->iCmd)
+		LINK.Status = InterfateRead;
+		std::vector<BufData>::iterator itr = m_vBufSlave.begin();
+		while(itr != m_vBufSlave.end())
 		{
-			BufData BD = *itr;
-			itr = m_vBufSlave.erase(itr);
-			/*				LINK.m_bInterfaceLock = UNLOCKED;*/
-			int i;
-			for (i = 0;i < len;i++)
+			if (ComdID == itr->iCmd)
 			{
-				*(m_FeedBackInfo + i)= *(BD.pucData + i);
+				BufData BD = *itr;
+				itr = m_vBufSlave.erase(itr);
+				/*				LINK.m_bInterfaceLock = UNLOCKED;*/
+				int i;
+				for (i = 0;i < len;i++)
+				{
+					*(m_FeedBackInfo + i)= *(BD.pucData + i);
+				}
+				LINK.Status = Idle;
+				return err_Success;
 			}
-			return err_Success;
+			itr++;
 		}
-		itr++;
-	}
-	/*		LINK.m_bInterfaceLock = UNLOCKED;*/
-	return err_MS_Pull_Invalid;
+		/*		LINK.m_bInterfaceLock = UNLOCKED;*/
+		LINK.Status = Idle;
+		return err_MS_Pull_Invalid;
+	}else return err_MS_Pull_Invalid;
+	
 }
-/*过程控制接口
-ProcErr SendToBuffer(BYTE *m_ControlComd,int len,int *ComdID)
+errorCode CSingleton::fnFakeAbortTimer()
 {
-	if(m_bInterfaceLock == UNLOCKED)
-	{
-		m_bInterfaceLock = LOCKED;
+	LINK.m_bAsyLock = true;
+	return err_Success;
+}
+errorCode CSingleton::fnFakeRestartTimer()
+{
+	LINK.m_bAsyLock = false;
+	return err_Success;
+}
+errorCode CSingleton::fnManualIntterupt()
+{
+	//LINK.m_bInterfaceLock = LOCKED;//锁定为忙状态，下一周期开始时为绿色通道
+	LINK.m_bGreenPath = UNLOCKED;
+	return err_Success;
+}
+//过程控制接口，具体使用时，需要稍加调整
+errorCode CSingleton::fnSendToBuffer(BYTE *m_ControlComd,int len,int *ComdID)
+{
+// 	if(m_bInterfaceLock == UNLOCKED)
+// 	{
+// 		m_bInterfaceLock = LOCKED;
 		if(err_Success == LINK.fnInit()&&err_Success == LINK.fnBuffRoute(m_ControlComd,len,ComdID,0))
 		{
-			m_bInterfaceLock = UNLOCKED;
-			return eProcSuccess;
+			//m_bInterfaceLock = UNLOCKED;
+			return err_Success;
 		}else 
 		{
-			m_bInterfaceLock = UNLOCKED;
-			return eMemMallocErr;
+			//m_bInterfaceLock = UNLOCKED;
+			return err_MS_IS_ABORT;
 		}
-	}else return eMemMallocErr;	
 }
-
+/*
 ProcErr ReceiveInfoBuffer(int ComdID,BYTE *m_FeedBackInfo,int len,int Waittime)
 {
-	if(m_bInterfaceLock == UNLOCKED)
-	{
-		m_bInterfaceLock = LOCKED;
+// 	if(m_bInterfaceLock == UNLOCKED)
+// 	{
+// 		m_bInterfaceLock = LOCKED;
 		if(err_Success == LINK.fnInit()&&err_Success == LINK.fnBuffPull(ComdID,m_FeedBackInfo,len))
 		{
-			m_bInterfaceLock = UNLOCKED;
+			//m_bInterfaceLock = UNLOCKED;
 			return eMemMallocErr;
 		}else
 		{
-			m_bInterfaceLock = UNLOCKED;
+			//m_bInterfaceLock = UNLOCKED;
 			return eMemMallocErr;
 		}
-	}else return eMemMallocErr;
+//
 }
 */
