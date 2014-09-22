@@ -82,10 +82,10 @@ typedef struct sBufData
 //模拟过程控制下发的结构体
 typedef struct sTestData
 {
-	UCHAR ucData;
-	UCHAR ucataNO;
-	UCHAR ucFlag;
-	UCHAR ucDefault;
+	short ucData;
+	short ucataNO;
+	//UCHAR ucFlag;
+	//UCHAR ucDefault;
 }TestData;
 typedef struct sDataRemark
 {
