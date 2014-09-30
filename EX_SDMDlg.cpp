@@ -22,6 +22,10 @@
 #include "mmsystem.h" 
 #pragma comment(lib, "winmm.lib")
 errorCode statusCode;
+#define ASCII_SPACE 32
+#define SPACE_EXIST 1
+#define SPACE_NOT_EXIST 0
+#define CMD_LEN_MAX 1024
 class CAboutDlg : public CDialogEx
 {
 public:
@@ -79,6 +83,7 @@ CEX_SDMDlg::CEX_SDMDlg(CWnd* pParent /*=NULL*/)
 	m_Offset = 0;
 	m_str0xCMD = _T("");
 	m_CMD_Len = 0;
+	m_cmd_data = _T("");
 }
 
 void CEX_SDMDlg::DoDataExchange(CDataExchange* pDX)
@@ -101,6 +106,7 @@ void CEX_SDMDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Text(pDX, IDC_EDIT_0xCMD, m_str0xCMD);
 	DDX_Text(pDX, IDC_EDIT_Len, m_CMD_Len);
 	DDV_MinMaxInt(pDX, m_CMD_Len, 0, 65535);
+	DDX_Text(pDX, IDC_EDIT_DATA, m_cmd_data);
 }
 
 BEGIN_MESSAGE_MAP(CEX_SDMDlg, CDialogEx)
@@ -114,6 +120,8 @@ BEGIN_MESSAGE_MAP(CEX_SDMDlg, CDialogEx)
 ON_BN_CLICKED(IDC_BTNPULL, &CEX_SDMDlg::OnClickedBtnpull)
 ON_WM_CLOSE()
 ON_BN_CLICKED(IDC_BTNCMD, &CEX_SDMDlg::OnClickedBtncmd)
+ON_BN_CLICKED(IDC_BTN_DATA, &CEX_SDMDlg::OnBnClickedBtnData)
+ON_BN_CLICKED(IDC_BUTTON1, &CEX_SDMDlg::OnBnClickedButton1)
 END_MESSAGE_MAP()
 
 
@@ -224,11 +232,16 @@ sTestData fnCreatTestData(const UINT uiD1,const UINT uiD2,const UINT uiD3,const 
 {
 	sTestData TD;
 
-	TD.ucData = uiD1;
-	TD.ucataNO = uiD2;
+	//TD.ucData = uiD1;
+	//TD.ucataNO = uiD2;
 	//TD.ucFlag = uiD3;
 	//TD.ucDefault = uiD4;
-
+	TD.sData1 = 0X0FAB;
+	TD.sData2 = 0X0004;
+	TD.sData3 = 0X0AAA;
+	TD.sData4 = 0X0000;
+	TD.sData5 = 0X0000;
+	TD.sData6 = 0X0000;
 	//unsigned char* puiTestData = (unsigned char*)&TD;
 	//UCHAR uiTestLen = sizeof(TD);
 	//LINK.fnBuffRoute(puiTestData,uiTestLen,NULL);
@@ -312,7 +325,81 @@ void CEX_SDMDlg::OnClickedBtncmd()
 		}
 	}
 }
+bool fnGetData(CString strCmd,unsigned char* pucI,short * pucDataLen)
+{
+	CString Cmd = strCmd;
 
+	unsigned char* pucTotal = (unsigned char*)(Cmd.GetBuffer(Cmd.GetLength()));
+	short ucCmdLen = Cmd.GetLength();
+	unsigned char* pucLocationSpace = new unsigned char[ucCmdLen];
+	short ucCount = ucCmdLen;
+	short ucCountSpace = 0;
+	//第一次循环找到空格的位置，同时确定有效数据的长度
+	while(ucCount)
+	{
+		if(ASCII_SPACE == *(pucTotal + ucCmdLen - ucCount))
+		{
+			*(pucLocationSpace + ucCmdLen - ucCount) = 1;
+			ucCountSpace++;
+		}
+		else *(pucLocationSpace + ucCmdLen- ucCount) = 0;
+		ucCount--;
+	}
+	ucCount = ucCmdLen;
+	*pucDataLen = (ucCmdLen - ucCountSpace)/2;
+	//unsigned char* pucFilter = unsigned char[*pucDataLen];
+	//第二次循环拆卸数据并进行拼接
+	unsigned char ucDataLen = 0;
+	short sCurrentPoint = 0;
+	short sPointTmp = 0;
+	while(ucCount)
+	{
+		
+		if(*(pucLocationSpace + ucCmdLen- ucCount) == SPACE_NOT_EXIST)
+		{
+			ucDataLen++;
+			sCurrentPoint++;
+		}
+		else
+		{
+			sPointTmp = sCurrentPoint/2 - 1;
+			unsigned char i = 0;
+			unsigned char LH = 0;
+			unsigned char ucOffset = (ucCmdLen- ucCount - ucDataLen);
+			for (i = ucOffset;i < ucOffset + ucDataLen;i++)
+			{
+				if(0 == LH%2)//H
+				{
+					if(*(pucTotal+i) >= '0'&&*(pucTotal+i) <= '9')
+						*(pucI + sPointTmp) = (*(pucTotal+i) - 48)*0x10;
+					else if(*(pucTotal+i) >= 'a'&&*(pucTotal+i) <= 'z')
+						*(pucI + sPointTmp) = (*(pucTotal+i) - 87)*0x10;
+					else if(*(pucTotal+i) >= 'A'&&*(pucTotal+i) <= 'Z')
+						*(pucI + sPointTmp) = (*(pucTotal+i) - 55)*0x10;					
+				}
+				else
+				{
+					if(*(pucTotal+i) >= '0'&&*(pucTotal+i) <= '9')
+						*(pucI + sPointTmp) += (*(pucTotal+i) - 48)*0x1;
+					else if(*(pucTotal+i) >= 'a'&&*(pucTotal+i) <= 'z')
+						*(pucI + sPointTmp) += (*(pucTotal+i) - 87)*0x1;
+					else if(*(pucTotal+i) >= 'A'&&*(pucTotal+i) <= 'Z')
+						*(pucI + sPointTmp) += (*(pucTotal+i) - 55)*0x1;
+					sPointTmp--;
+				}
+				LH++;
+			}
+			LH = 0;
+			ucDataLen = 0;
+		}
+		ucCount--;
+	}
+	//delet pucFilter[];
+	//pucFilter = NULL;
+	delete[] pucLocationSpace;
+	pucLocationSpace = NULL;
+	return true;
+}
 bool fnChangeInfo2Data(CString strCmd,int iLen,unsigned char* pucI)
 {
 	CString Cmd = strCmd;
@@ -349,4 +436,37 @@ bool fnChangeInfo2Data(CString strCmd,int iLen,unsigned char* pucI)
 	//释放字符串，不过其实没有作用的喵！
 	Cmd.ReleaseBuffer();
 	return true;
+}
+
+
+void CEX_SDMDlg::OnBnClickedBtnData()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	UpdateData();
+	unsigned char* pucInfo = new unsigned char[CMD_LEN_MAX];
+	int* piCmdID = new int[1];
+	short* psCmdLen = new short[1];
+	
+	if(fnGetData(m_cmd_data,pucInfo,psCmdLen))
+	{
+		if(err_Success == LINK.fnSendToBuffer(pucInfo,*psCmdLen,piCmdID))
+		{
+			delete[] pucInfo;
+			pucInfo = NULL;
+			delete piCmdID;
+			piCmdID = NULL;
+			delete psCmdLen;
+			psCmdLen = NULL;
+		}else
+		{
+			MessageBox("Connection Is Unvalid!");
+		}
+	}
+}
+
+
+void CEX_SDMDlg::OnBnClickedButton1()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	LINK.fnForce2WriteStatus();
 }

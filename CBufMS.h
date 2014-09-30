@@ -82,8 +82,14 @@ typedef struct sBufData
 //模拟过程控制下发的结构体
 typedef struct sTestData
 {
-	short ucData;
-	short ucataNO;
+	//short ucData;
+	//short ucataNO;
+	short sData1;
+	short sData2;
+	short sData3;
+	short sData4;
+	short sData5;
+	short sData6;
 	//UCHAR ucFlag;
 	//UCHAR ucDefault;
 }TestData;
@@ -120,8 +126,10 @@ private:
 	CSingleton & operator = (const CSingleton &);
 	//Master Buffer:	来自过程控制的数据信息集合，使用std::Vector存储
 	std::vector<BufData> m_vBufMaster;
-	//Slave Buffer:		来自硬件设备反馈的数据信息集合，使用std:Vector存储
+	//Slave Buffer:		来自硬件设备反馈的数据信息集合，使用std::Vector存储
 	std::vector<BufData> m_vBufSlave;
+	//Advance Buffer:	来自过程控制的优先级最高的信息集合，使用std::Vector存储
+	std::vector<BufData> m_vBufAdvance;
 	//Lock the state Master/Slave:	用来锁定存储过程状态，防止同时多次操作内存
 	bool m_bLockMaster;
 	bool m_bLockSlave;
@@ -198,6 +206,7 @@ public:
 	errorCode fnFakeRestartTimer();
 	errorCode fnManualIntterupt();//人工中断，用来开辟绿色通道
 	errorCode fnSendToBuffer(BYTE *m_ControlComd,int len,int *ComdID);
+	errorCode fnForce2WriteStatus();
 };
 
 

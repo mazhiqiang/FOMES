@@ -674,6 +674,13 @@ errorCode CSingleton::fnSendToBuffer(BYTE *m_ControlComd,int len,int *ComdID)
 // 	if(m_bInterfaceLock == UNLOCKED)
 // 	{
 // 		m_bInterfaceLock = LOCKED;
+	if(false)
+	{
+		//高优先级命令处理段，目前未启用
+	}
+	else
+	{
+		//低优先级命令处理段，目前启用中
 		if(err_Success == LINK.fnInit()&&err_Success == LINK.fnBuffRoute(m_ControlComd,len,ComdID,0))
 		{
 			//m_bInterfaceLock = UNLOCKED;
@@ -683,6 +690,12 @@ errorCode CSingleton::fnSendToBuffer(BYTE *m_ControlComd,int len,int *ComdID)
 			//m_bInterfaceLock = UNLOCKED;
 			return err_MS_IS_ABORT;
 		}
+	}
+}
+errorCode CSingleton::fnForce2WriteStatus()
+{
+	if((0 != m_vBufMaster.size()&&err_Success==LINK.fnFreeMemory(&m_vBufMaster[0])&&err_Success==LINK.fnPopBuffMaster()))m_bSynLock = WRITE;//CAUTION: EXECUTE WITHOUT TOO MUCH THINGKING
+	return err_Success;
 }
 /*
 ProcErr ReceiveInfoBuffer(int ComdID,BYTE *m_FeedBackInfo,int len,int Waittime)
