@@ -203,7 +203,8 @@ UINT CPciProcess::fnPciIntThread(LPVOID pParam)
 
 		switch(pStatus) {
 		case ApiSuccess: 
-			LINK.m_bAsyLock = true;
+			//LINK.m_bAsyLock = true;
+			LINK.m_bAdvance = ADVANCE;
 			AfxMessageBox("Trigger!");
 			break;
 		case ApiInvalidAddress:

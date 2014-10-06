@@ -218,7 +218,7 @@ HCURSOR CEX_SDMDlg::OnQueryDragIcon()
 
 int i_countNum = 0;
 
-bool InitTimerCheckSlave();
+
 void CEX_SDMDlg::OnClickedBtntest()
 {
 	// TODO: 在此添加控件通知处理程序代码
@@ -226,37 +226,19 @@ void CEX_SDMDlg::OnClickedBtntest()
 	//LINK.fnSetLockS(false);
 	LINK.fnSetCWnd(this);
 	LINK.fnSetTextTimerSlaveID(IDC_STATIC);
-	InitTimerCheckSlave();
-}
-sTestData fnCreatTestData(const UINT uiD1,const UINT uiD2,const UINT uiD3,const UINT uiD4)
-{
-	sTestData TD;
-
-	//TD.ucData = uiD1;
-	//TD.ucataNO = uiD2;
-	//TD.ucFlag = uiD3;
-	//TD.ucDefault = uiD4;
-	TD.sData1 = 0X0FAB;
-	TD.sData2 = 0X0004;
-	TD.sData3 = 0X0AAA;
-	TD.sData4 = 0X0000;
-	TD.sData5 = 0X0000;
-	TD.sData6 = 0X0000;
-	//unsigned char* puiTestData = (unsigned char*)&TD;
-	//UCHAR uiTestLen = sizeof(TD);
-	//LINK.fnBuffRoute(puiTestData,uiTestLen,NULL);
-	return TD;
+	LINK.InitTimerCheckSlave();
 }
 
-//sTestData TD;
+
+
 void CEX_SDMDlg::OnClickedBtnenter()
 {
 	// TODO: 在此添加控件通知处理程序代码  
-	LINK.fnSetLockS(false);
-	LINK.fnSetLockM(false);
+	//LINK.fnSetLockS(false);
+	//LINK.fnSetLockM(false);
 	UpdateData(TRUE);
-	if(LINK.m_bAsyLock == false)
-		LINK.fnBuffRoute(&fnCreatTestData(m_Data1,m_Data2,m_Data3,m_Data4),m_Offset);
+	//if(LINK.m_bAsyLock == false)
+		//LINK.fnBuffRoute(&fnCreatTestData(m_Data1,m_Data2,m_Data3,m_Data4),m_Offset);
 	
 	//return 0;
 }
@@ -277,7 +259,7 @@ void CEX_SDMDlg::OnClickedBtnpull()
 	// TODO: 在此添加控件通知处理程序代码
 	UpdateData();
 	BufData bd;
-	if(LINK.m_bAsyLock == false && err_Success==LINK.fnBuffPull(m_CmdID,&bd))
+	if(LINK.m_bAsyLock == false && err_Success==LINK.fnBuffPull2WinForm(m_CmdID,&bd))
 	{ 
 		CStatic* pWnd = (CStatic*)GetDlgItem(IDC_STATICDATA);
 		pWnd->SetWindowText(LINK.fnExData(&bd));

@@ -7,10 +7,7 @@
 #pragma comment(lib, "winmm.lib")
 
 //Éè¶¨»ò»ñµÃÖ÷´ÓËø¶¨µÄ×´Ì¬
-bool CSingleton::fnGetLockM()
-{
-	return m_bLockMaster;
-}
+
 //³õÊ¼»¯
 errorCode CSingleton::fnInit()
 {
@@ -24,20 +21,9 @@ errorCode CSingleton::fnInit()
 	}
 	return err_Success;
 }
-bool CSingleton::fnSetLockM(bool tmp)
-{
-	m_bLockMaster = tmp;
-	return m_bLockMaster;
-}
-bool CSingleton::fnSetLockS(bool tmp)
-{
-	m_bLockSlave = tmp;
-	return m_bLockSlave;
-}
-bool CSingleton::fnGetLockS()
-{
-	return m_bLockSlave;
-}
+
+
+
 //ÔÚÖ¸¶¨´°ÌåµÄÖ¸¶¨Î»ÖÃÐ´ÈëÊý¾Ý
 bool CSingleton::fnSetWindowText(CWnd* cwnd,int iconten,unsigned int iposition)
 {
@@ -100,58 +86,15 @@ int CSingleton::fnGetTextTimerSlaveID()
 }
 
 //½«ÊäÈëµÄ½á¹¹Ìå»ò½á¹¹ÌåÌØÕ÷½øÐÐÁ´Â·¹ÜÀí
-errorCode CSingleton::fnBuffRoute(sTestData* sBuf,unsigned int uioffset)
-{
-	unsigned char* puiTestData = (unsigned char*)sBuf;
-	UCHAR uiTestLen = sizeof(*sBuf);
 
-	if (uiTestLen<0||m_bLockMaster)
-	{
-		//LINK.m_bInterfaceLock = UNLOCKED;
-		return err_MS_Memory_Route_Invalid;
-	}
-	m_bLockMaster = true;
-	unsigned int uicount = 0;
-	unsigned char* buf = new unsigned char[uiTestLen];
-	if(buf == NULL)
-	{
-		//LINK.m_bInterfaceLock = UNLOCKED;
-		return err_MS_Memory_Route_Invalid;
-	}
-	for (uicount = 0;uicount < uiTestLen;uicount++)
-	{
-		*(buf+uicount) = *(puiTestData+uicount);
-	}
-
-
-	m_sCurMaster.pucData = buf;
-	m_sCurMaster.iCmd = m_uicmdid;
-	m_sCurMaster.iLength = uiTestLen;
-	m_sCurMaster.uiOffset = uioffset;
-	if(RAMWrite != LINK.Status)
-	{	//²Ù×÷MVector£¬·ÀÖ¹¹ý³Ì½Ó¿Ú¶ÔÆä½øÐÐ²Ù×÷
-		LINK.Status = InterfaceWrite;
-		m_vBufMaster.push_back(m_sCurMaster);
-		m_bLockMaster = false;
-		m_uicmdid++;
-		LINK.Status = Idle;
-		return err_Success;
-	}else
-	{
-		delete[] buf;
-		buf = NULL;
-		return err_MS_Push_Invalid;
-	}	
-}
 errorCode CSingleton::fnBuffRoute(unsigned char* m_ControlComd,int len,int* ComdID,unsigned int uioffset)
 {
 
-	if (m_bLockMaster||len<0)
+	if (len<0)
 	{
-		//LINK.m_bInterfaceLock = UNLOCKED;
 		return err_MS_Memory_Route_Invalid;
 	}
-	m_bLockMaster = true;
+	
 	unsigned int uicount = 0;
 	unsigned char* buf = new unsigned char[len];
 	if(buf == NULL)return err_MS_Memory_Route_Invalid;
@@ -164,15 +107,16 @@ errorCode CSingleton::fnBuffRoute(unsigned char* m_ControlComd,int len,int* Comd
 	m_sCurMaster.iCmd = m_uicmdid;
 	m_sCurMaster.iLength = len;
 	m_sCurMaster.uiOffset = uioffset;
-	if(RAMWrite != LINK.Status)//LINK²¢Î´²Ù×÷MVector
+	if(RAMWrite != Status)//LINK²¢Î´²Ù×÷MVector
 	{
-		LINK.Status = InterfaceWrite;
-		m_vBufMaster.push_back(m_sCurMaster);
+		Status = InterfaceWrite;
+		if(UNADVANCE == m_bAdvance)
+			m_vBufMaster.push_back(m_sCurMaster);
+		else if(ADVANCE == m_bAdvance)
+			m_vBufAdvance.push_back(m_sCurMaster);
 		*ComdID = m_uicmdid;//·µ»ØCMDID
-		m_bLockMaster = false;
 		m_uicmdid++;
-		//LINK.m_bInterfaceLock = UNLOCKED;
-		LINK.Status = Idle;	//×´Ì¬ÇÐ»»»ØÏÐ
+		Status = Idle;	//×´Ì¬ÇÐ»»»ØÏÐ
 		return err_Success;
 	}else
 	{
@@ -183,13 +127,134 @@ errorCode CSingleton::fnBuffRoute(unsigned char* m_ControlComd,int len,int* Comd
 	//ÊÍ·ÅÄÚ´æÊ±£¬ÐèÒª¿¼ÂÇÊÍ·ÅµÄÄÚ´æ´óÐ¡¡£2014.08.15
 }
 
+errorCode CSingleton::fnRead(void)
+{
+	unsigned char* pucRemark = new unsigned char[REMARK_LENGTH];
+	BufData updateData;
+// 						updateData.iCmd = 0;
+// 						updateData.iLength = 0;
+// 						updateData.iCheckCode = 0;
+	int icount;
+	if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_REMARK_ADDRESS_OFFSET,REMARK_LENGTH,pucRemark))
+	{
+		//¶ÁÈ¡RemarkÇøÐÅÏ¢£¬»ñµÃÖ¸ÁîID£¬Ö¸Áî³¤¶È£¬Ð£ÑéÂë
+		updateData.iCmd =((DataRemark *)pucRemark)->ulCmdid;
+		updateData.iLength = ((DataRemark *)pucRemark)->usLength;
+		updateData.iCheckCode =(((DataRemark *)pucRemark)->usCheckCode)&0xFF;
+	}else 
+	{
+		m_ucReadRetry++;
+		m_bDualRamIsReady = true;
+		delete[] pucRemark;
+		pucRemark = NULL;
+		return err_PCI_Read_Memory_Invalid;
+	}
+	unsigned char* pucData = new unsigned char[updateData.iLength];
+	//¶ÁÈ¡Êý¾Ý°üÌå£¬²¢ºË¶ÔÐ£ÑéÂë
+	if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_DATA_ADDRESS_OFFSET,updateData.iLength,pucData))
+	{
+		int icheckword = 0;
+		for (icount = 0;icount <updateData.iLength;icount++)
+		{
+			icheckword += *(pucData + icount);
+		}
+		//Ð£ÑéÂëºË¶Ô³ö´í£¬ÔòÇå¿Õ´æ´¢Êý¾ÝµÄÄÚ´æ
+		if((icheckword&0xFF) != updateData.iCheckCode)
+		{
+			delete[] pucRemark;
+			pucRemark = NULL;
+			delete[] pucData;
+			pucData = NULL;
+			m_ucReadRetry++;//¶ÁÈ¡Êý¾ÝµÄÐ£ÑéÂëÓÐ´í£¬ÐèÒªÖØÊÔ,´íÈý´ÎÍùÉÏÍ±
+			m_bDualRamIsReady = true;
+			m_bSynLock = WRITE;
+			return err_MS_Check_Code_Invalid;
+		}else
+		{
+			//Ð£ÑéÂëÕýÈ·£¬½«Êý¾ÝÐ´ÈëÉÏ´«¶ÓÁÐ£¬²¢±£ÓÐÄÚ´æ
+			updateData.pucData = pucData;
+			if(InterfaceRead != Status)//Ð´ÈëSVector£¬´ËÊ±²»Ó¦¸ÃÎªInterfaceRead×´Ì¬
+			{
+				Status = RAMRead;
+				m_vBufSlave.push_back(updateData);
+				Status = Idle;
+			}else return err_PCI_Read_Memory_Invalid;
+		}
+	}else  
+	{
+		delete[] pucRemark;
+		pucRemark = NULL;
+		delete[] pucData;
+		pucData = NULL;
+		m_bDualRamIsReady = true;
+		m_ucReadRetry++;
+		return	err_PCI_Read_Memory_Invalid;
+	}
+						
+	delete[] pucRemark;
+	pucRemark = NULL;
 
+	//Íê³É¶ÁÈÎÎñ£¬´ËÊ±ÐèÒª½«±£ÓÐµÄÐÅÏ¢¼°ÄÚ´æÊÍ·Å
+	if(InterfaceWrite != Status)
+	{
+		Status = RAMWrite;//ÊÍ·ÅÄÚ´æ£¬Òª²Ù×÷MVector
+		if(!(err_Success==fnBuffPop(updateData.iCmd,&m_vBufMaster)))
+		{
+			Status = Idle;
+			m_bDualRamIsReady = true;
+			m_ucReadRetry++;//ÊÍ·ÅÄÚ´æ³öÏÖÎÊÌâ
+			return err_MS_Memory_Free_Invalid;
+		}
+		Status = Idle;
+	}
+	m_ucInvalidRetry = 0;
+	m_ucErrorRetry = 0;
+	m_ucReadRetry = 0;//Çå³ý¶ÁÐ´ÖØÊÔ´ÎÊý
+	m_bSynLock = WRITE;
+	m_bDualRamIsReady = true;
+	return err_Success;
+}
+
+errorCode CSingleton::fnWrite(void)
+{
+	if(InterfaceWrite != Status)
+	{
+		Status = RAMWrite;//²Ù×÷MVector
+		if (0 != m_vBufMaster.size()||0 != m_vBufAdvance.size())
+		{	
+			m_bDualRamIsReady = false;//ÏòË«¿ÚRAMÐ´£¬²¢Ëø¶¨×´Ì¬
+			if(0 != m_vBufMaster.size()&&err_Success==fnHardProc(&m_vBufMaster[BUFFER_ZERO])) 
+			{
+				Status = Idle;
+				m_bSynLock = READ;
+				//fnSetLockS(false);
+				m_bDualRamIsReady = true;
+
+				fnSetTimerSlaveCount(fnGetTimerSlaveCount()+1);
+				m_ucInvalidRetry = 0;
+				m_ucErrorRetry = 0;
+				return err_Success;
+			}else
+			{					
+				Status = Idle;
+				//fnSetLockS(false);
+				m_bDualRamIsReady = true;
+				m_ucInvalidRetry++;
+				return err_MS_Memory_Trans_Invalid;
+			}					
+		}else 
+		{
+			Status = Idle;
+			m_bDualRamIsReady = true;
+			//m_ucInvalidRetry++;
+			return err_PCI_Write_Memory_Invalid;
+		}
+	}
+	m_bDualRamIsReady = true;
+}
 errorCode CSingleton::fnBuffTrans()//²»ÔÚÂÌÉ«Í¨µÀÇé¿öÏÂ£¬³£¹æÇé¿ö£¬Õý³£Êý¾Ý¹ÜµÀÆð×÷ÓÃ
 {
-	if (LINK.fnGetLockS())
-	{
-		return err_MS_Memory_Trans_Invalid;
-	}
+	
 	if (!m_bDualRamIsReady)
 	{
 		return err_MS_Memory_Trans_Invalid;
@@ -199,10 +264,10 @@ errorCode CSingleton::fnBuffTrans()//²»ÔÚÂÌÉ«Í¨µÀÇé¿öÏÂ£¬³£¹æÇé¿ö£¬Õý³£Êý¾Ý¹ÜµÀÆ
 	{
 		//ÕâÀïÍ±ÉÏÈ¥,sendmessage
 		//Ä¿Ç°³ö´íµÄ½â¾ö°ì·¨ÊÇÇå¿ÕÄÚ´æ£¬ÕâÑùµÄ´íÎóÀ´×ÔÓ²¼þ
-		if(err_Success == LINK.fnFreeAllMemoryAndData())
+		if(err_Success == fnFreeAllMemoryAndData())
 		{
-			LINK.m_bSynLock = WRITE;//Ð´×´Ì¬
-			//LINK.m_bAsyClock = false;//½âËø
+			m_bSynLock = WRITE;//Ð´×´Ì¬
+			//m_bAsyClock = false;//½âËø
 			m_ucInvalidRetry = 0;
 			m_ucErrorRetry = 0;
 			m_ucReadRetry = 0;
@@ -218,124 +283,43 @@ errorCode CSingleton::fnBuffTrans()//²»ÔÚÂÌÉ«Í¨µÀÇé¿öÏÂ£¬³£¹æÇé¿ö£¬Õý³£Êý¾Ý¹ÜµÀÆ
 		return err_MS_IS_ABORT;
 	}
 	//Ëø¶¨ÏòÓ²¼þÐ´Êý¾ÝµÄ×´Ì¬
-	LINK.fnSetLockS(false);//Ã»ÆôÓÃ
+	//fnSetLockS(false);//Ã»ÆôÓÃ
 	ULONG ulFeedbackData;//»ñÈ¡Ë«¿ÚRAMÊý¾Ý
-	if(LINK.m_bAsyLock)
+	if(m_bAsyLock)
 	{
-		LINK.fnSetLockS(false);
+		//fnSetLockS(false);
 		return err_MS_IS_ABORT;
 	}
 	else
 	{	//²é¿´Ë«¿ÚRAMµÄ¶ÁÐ´×´Ì¬£¬ÔÚ¿É¶ÁÐ´Çé¿öÏÂ½øÐÐÊý¾Ý´«Êä
 		if(m_bDualRamIsReady)
 		{//¶Á×´Ì¬£¬¶ÁÍ¬²½ËøµÄ×´Ì¬£¬Í¬²½ËøÎª¶Á·½¿É½øÐÐ¶Á×´Ì¬
-
-		if (m_bSynLock == READ)
-		{
 			m_bDualRamIsReady = false;//ÇÐ»»Ë«¿ÚRAMµÄ¶ÁÐ´×´Ì¬£¬·ÀÖ¹¶à´Î²Ù×÷
-			if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_BACK_ADDRESS_OFFSET,ulFeedbackData))
-			{			
+			if(m_bSynLock == WRITE)
+			{
+				fnWrite();
+				m_vBufMaster;
 				
+				//m_bSynLock = READ;
+			}
+			else if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_BACK_ADDRESS_OFFSET,ulFeedbackData))
+			{							
  				switch (ulFeedbackData&0x0000FFFF)
 				{
 				case UPDATE_FEEDBACK_INFO_IS_READY://Ö¸¶¨µÄÎ»ÖÃÓÐÊý¾Ý£¬¿ÉÒÔ½øÐÐÈ¡Êý¾Ý£»
-					{
-						unsigned char* pucRemark = new unsigned char[REMARK_LENGTH];
-						BufData updateData;
-// 						updateData.iCmd = 0;
-// 						updateData.iLength = 0;
-// 						updateData.iCheckCode = 0;
-						int icount;
-						if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_REMARK_ADDRESS_OFFSET,REMARK_LENGTH,pucRemark))
-						{
-							//¶ÁÈ¡RemarkÇøÐÅÏ¢£¬»ñµÃÖ¸ÁîID£¬Ö¸Áî³¤¶È£¬Ð£ÑéÂë
-							updateData.iCmd =((DataRemark *)pucRemark)->ulCmdid;
-							updateData.iLength = ((DataRemark *)pucRemark)->usLength;
-							updateData.iCheckCode =(((DataRemark *)pucRemark)->usCheckCode)&0xFF;
-						}else 
-						{
-							m_ucReadRetry++;
-							m_bDualRamIsReady = true;
-							delete[] pucRemark;
-							pucRemark = NULL;
-							return err_PCI_Read_Memory_Invalid;
-						}
-						unsigned char* pucData = new unsigned char[updateData.iLength];
-						//¶ÁÈ¡Êý¾Ý°üÌå£¬²¢ºË¶ÔÐ£ÑéÂë
-						if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_DATA_ADDRESS_OFFSET,updateData.iLength,pucData))
-						{
-							int icheckword = 0;
-							for (icount = 0;icount <updateData.iLength;icount++)
-							{
-								icheckword += *(pucData + icount);
-							}
-							//Ð£ÑéÂëºË¶Ô³ö´í£¬ÔòÇå¿Õ´æ´¢Êý¾ÝµÄÄÚ´æ
-							if((icheckword&0xFF) != updateData.iCheckCode)
-							{
-								delete[] pucRemark;
-								pucRemark = NULL;
-								delete[] pucData;
-								pucData = NULL;
-								m_ucReadRetry++;//¶ÁÈ¡Êý¾ÝµÄÐ£ÑéÂëÓÐ´í£¬ÐèÒªÖØÊÔ,´íÈý´ÎÍùÉÏÍ±
-								m_bDualRamIsReady = true;
-								//m_bSynLock = WRITE;
-								return err_MS_Check_Code_Invalid;
-							}else
-							{
-								//Ð£ÑéÂëÕýÈ·£¬½«Êý¾ÝÐ´ÈëÉÏ´«¶ÓÁÐ£¬²¢±£ÓÐÄÚ´æ
-								updateData.pucData = pucData;
-								if(InterfateRead != LINK.Status)//Ð´ÈëSVector£¬´ËÊ±²»Ó¦¸ÃÎªInterfaceRead×´Ì¬
-								{
-									LINK.Status = RAMRead;
-									LINK.m_vBufSlave.push_back(updateData);
-									LINK.Status = Idle;
-								}else return err_PCI_Read_Memory_Invalid;
-							}
-						}else  
-						{
-							delete[] pucRemark;
-							pucRemark = NULL;
-							delete[] pucData;
-							pucData = NULL;
-							m_bDualRamIsReady = true;
-							m_ucReadRetry++;
-							return	err_PCI_Read_Memory_Invalid;
-						}
-						
-						delete[] pucRemark;
-						pucRemark = NULL;
-
-						//Íê³É¶ÁÈÎÎñ£¬´ËÊ±ÐèÒª½«±£ÓÐµÄÐÅÏ¢¼°ÄÚ´æÊÍ·Å
-						if(InterfaceWrite != LINK.Status)
-						{
-							LINK.Status = RAMWrite;//ÊÍ·ÅÄÚ´æ£¬Òª²Ù×÷MVector
-							if(!(err_Success==LINK.fnFreeMemory(&m_vBufMaster[0])&&err_Success==LINK.fnPopBuffMaster()))
-							{
-								LINK.Status = Idle;
-								m_bDualRamIsReady = true;
-								m_ucReadRetry++;//ÊÍ·ÅÄÚ´æ³öÏÖÎÊÌâ
-								return err_MS_Memory_Free_Invalid;
-							}
-							LINK.Status = Idle;
-						}
-						m_ucInvalidRetry = 0;
-						m_ucErrorRetry = 0;
-						m_ucReadRetry = 0;//Çå³ý¶ÁÐ´ÖØÊÔ´ÎÊý
-						m_bSynLock = WRITE;
-						return err_Success;
-					}
+					fnRead();
+					//fnWrite();
 					break;
 				case UPDATE_CHECK_WORD_IS_INVALID://Ð£ÑéÂë³ö´í£¬ÐèÒªÖØÐÂ·¢ËÍÖ¸Áî£»
 					{
-						LINK.m_ucErrorRetry++;
+						m_ucErrorRetry++;
 						m_bDualRamIsReady = true;
-						m_bSynLock = WRITE;
 						return err_PCI_Read_Memory_Invalid;
 					}
 					break;
 				case UPDATE_CMD_IS_INVALID://Ö¸ÁîÎÞÒâÒå£¬ÐèÒªÖØÐÂ·¢ËÍÖ¸Áî£»
 					{
-						LINK.m_ucInvalidRetry++;
+						m_ucInvalidRetry++;
 						m_bDualRamIsReady = true;
 						return err_PCI_Read_Memory_Invalid;
 					}
@@ -349,49 +333,11 @@ errorCode CSingleton::fnBuffTrans()//²»ÔÚÂÌÉ«Í¨µÀÇé¿öÏÂ£¬³£¹æÇé¿ö£¬Õý³£Êý¾Ý¹ÜµÀÆ
 				}
 			}else
 			{
-				if(m_ucReadRetry < READ_TRY)LINK.m_ucReadRetry++;
+				if(m_ucReadRetry < READ_TRY)m_ucReadRetry++;
 				else m_bSynLock = READ;//ÕâÀïÊÇ¸öÀ×
 				m_bDualRamIsReady = true;
 				return err_PCI_Read_Memory_Invalid;
 			}
-		} 
-		//Ð´×´Ì¬
-		else
-		{
-			if(InterfaceWrite != LINK.Status)
-			{
-				LINK.Status = RAMWrite;//²Ù×÷MVector
-				if (0 != LINK.m_vBufMaster.size())
-				{	
-					m_bDualRamIsReady = false;//ÏòË«¿ÚRAMÐ´£¬²¢Ëø¶¨×´Ì¬
-					if(err_Success==fnHardProc(&m_vBufMaster[0])) 
-					{
-						LINK.Status = Idle;
-						LINK.m_bSynLock = READ;
-						LINK.fnSetLockS(false);
-						m_bDualRamIsReady = true;
-
-						fnSetTimerSlaveCount(fnGetTimerSlaveCount()+1);
-						m_ucInvalidRetry = 0;
-						m_ucErrorRetry = 0;
-						return err_Success;
-					}else
-					{
-						LINK.Status = Idle;
-						LINK.fnSetLockS(false);
-						m_bDualRamIsReady = true;
-						m_ucInvalidRetry++;
-						return err_MS_Memory_Trans_Invalid;
-					}					
-				}else 
-				{
-					LINK.Status = Idle;
-					m_bDualRamIsReady = true;
-					//m_ucInvalidRetry++;
-					return err_PCI_Write_Memory_Invalid;
-				}
-			}
-		}
 	}else return err_MS_IS_ABORT;
 }
 	return err_Success;
@@ -478,7 +424,19 @@ errorCode CSingleton::fnPopBuffMaster()
 	m_bDualRamIsReady = true;
 	return err_Success;
 }
-errorCode CSingleton::fnFreeAllMemoryAndData()
+
+errorCode CSingleton::fnPopBuffAdvance()
+{
+	if (!m_vBufAdvance.size())
+	{
+		return err_MS_Data_Pop_Invalid;
+	}
+	vector<BufData>::iterator itr = m_vBufAdvance.begin();
+	m_vBufAdvance.erase(itr);
+	m_bDualRamIsReady = true;
+	return err_Success;
+}
+errorCode CSingleton::fnFreeAllMemoryAndData()//Without Too Much Thinking 20141003
 {
 	//ÊÍ·Å´Ó¶ÓÁÐ¼°ÄÚ´æ
 	std::vector<BufData>::iterator itrs = m_vBufSlave.begin();
@@ -496,13 +454,43 @@ errorCode CSingleton::fnFreeAllMemoryAndData()
 		if(err_Success!=fnFreeMemory(&BD))return err_MS_Memory_Free_Invalid;
 		itrm = m_vBufMaster.erase(itrm);
 	}
+	//ÊÍ·Å¸ßÓÅÏÈ¼¶¶ÓÁÐ¼°ÄÚ´æ
+	std::vector<BufData>::iterator itra = m_vBufAdvance.begin();
+	while(itra != m_vBufAdvance.end())
+	{
+		BufData BD = *itra;
+		if(err_Success!=fnFreeMemory(&BD))return err_MS_Memory_Free_Invalid;
+		itra = m_vBufAdvance.erase(itra);
+	}
 	return err_Success;
 }
-errorCode CSingleton::fnBuffPull(const UINT uicmdid,BufData* BD)
+errorCode CSingleton::fnBuffPop(const UINT uicmdid,std::vector<BufData>* pBD)
 {
-	if(RAMRead != LINK.Status)
+	std::vector<BufData>::iterator itrm = pBD->begin();;
+	while(itrm != pBD->end())
 	{
-		LINK.Status = InterfateRead;
+		if(uicmdid == itrm->iCmd)
+		{
+			unsigned char* pucDataMaster;
+			pucDataMaster = itrm->pucData;
+			delete[] pucDataMaster;
+			pucDataMaster = NULL;
+
+			itrm = pBD->erase(itrm);
+			Status = Idle;
+			return err_Success;
+		}
+		itrm++;
+		//return err_MS_Memory_Free_Invalid;
+	}
+
+	return err_MS_Memory_Free_Invalid;
+}
+errorCode CSingleton::fnBuffPull2WinForm(const UINT uicmdid,BufData* BD)
+{
+	if(RAMRead != Status)
+	{
+		Status = InterfaceRead;
 		std::vector<BufData>::iterator itr = m_vBufSlave.begin();
 		while(itr != m_vBufSlave.end())
 		{
@@ -510,12 +498,12 @@ errorCode CSingleton::fnBuffPull(const UINT uicmdid,BufData* BD)
 			{
 				*BD = *itr;
 				itr = m_vBufSlave.erase(itr);
-				LINK.Status = Idle;
+				Status = Idle;
 				return err_Success;
 			}
 			itr++;
 		}
-		LINK.Status = Idle;
+		Status = Idle;
 		return err_MS_Pull_Invalid;
 	}
 	return err_MS_Pull_Invalid;
@@ -564,53 +552,27 @@ void CSingleton::fnEnableIntterupt()
 void PASCAL CallBackFunc(UINT wTimerID, UINT msg,DWORD dwUser,DWORD dwl,DWORD dw2) 
 {
 	LINK.fnSetWindowText(LINK.fnGetCWnd(),LINK.fnGetTimerSlaveCount(),LINK.fnGetTextTimerSlaveID());
-	if(LOCKED == LINK.m_bGreenPath)
+	if(true)
 	{
-		//LINK.m_bInterfaceLock = LOCKED;
-		if(LINK.m_bAsyLock)
+		switch(LINK.fnBuffTrans())
 		{
-			//if(err_Success == LINK.fnFreeAllMemoryAndData())
-			{
-				//LINK.m_bSynLock = WRITE;//Ð´×´Ì¬
-				LINK.m_bAsyLock = false;//½âËø
-			}
-			//else SendMessage
-		}else
-		{
-			if(!LINK.fnGetLockS())
-			{
-				switch(LINK.fnBuffTrans())
-				{
-				case err_Success:
-					break;
-				case err_MS_IS_ABORT:
-					//ÏòÉÏÍ±Ò»¸öÏûÏ¢£¡
-					break;
-				case err_PCI_Write_Memory_Invalid:
-					break;
-				case err_PCI_Read_Memory_Invalid:
-					break;
-				default:
-					break;
-				}
-			}
+		case err_Success:
+			break;
+		case err_MS_IS_ABORT:
+			//ÏòÉÏÍ±Ò»¸öÏûÏ¢£¡
+			break;
+		case err_PCI_Write_Memory_Invalid:
+			break;
+		case err_PCI_Read_Memory_Invalid:
+			break;
+		default:
+			break;
 		}
-		//LINK.m_bInterfaceLock = UNLOCKED;
 	}
 	else{
-		//ÏòÖ¸¶¨RAMÇøÓòÐ´ÈëÊý¾Ý£¬Í¨Öªµ×²ãÓ²¼þ
-		//Õâ¸öµØ·½Ó¦¸ÃÉè¼ÆÒ»¸ö×´Ì¬»ú,´úÂëÃ»Éè¼ÆºÃ
-		if (WRITE == LINK.m_bGreenPathStatus)
-		{
-
-		}
-		else if(READ == LINK.m_bGreenPathStatus)
-		{
-			LINK.m_bInterfaceLock = UNLOCKED;//ÂÌÉ«Í¨µÀÖ´ÐÐÍê±Ï£¬½âËøÕý³£¹¤×÷
-		}
 	}
 }
-bool InitTimerCheckSlave()
+bool CSingleton::InitTimerCheckSlave()
 {
 	::timeSetEvent (LINK.fnGetTimerPeriodms(), LINK.fnGetTimerPrecisionms(),
 		CallBackFunc,NULL,TIME_PERIODIC); 
@@ -625,9 +587,9 @@ errorCode CSingleton::fnReleasePCI()
 //½Ó¿Ú²âÊÔÉÐÎ´ÍêÕû²âÊÔ£¬Ô­Òò£¬¹ý³Ì¿ØÖÆ´úÂëÎÞ·¨Âú×ãÂÖÑ¯Ìõ¼þ
 errorCode CSingleton::fnBuffPull(int ComdID,BYTE *m_FeedBackInfo,int len,int Waittime)
 {
-	if(RAMRead != LINK.Status)
+	if(RAMRead != Status)
 	{
-		LINK.Status = InterfateRead;
+		Status = InterfaceRead;
 		std::vector<BufData>::iterator itr = m_vBufSlave.begin();
 		while(itr != m_vBufSlave.end())
 		{
@@ -635,37 +597,37 @@ errorCode CSingleton::fnBuffPull(int ComdID,BYTE *m_FeedBackInfo,int len,int Wai
 			{
 				BufData BD = *itr;
 				itr = m_vBufSlave.erase(itr);
-				/*				LINK.m_bInterfaceLock = UNLOCKED;*/
+				/*				m_bInterfaceLock = UNLOCKED;*/
 				int i;
 				for (i = 0;i < len;i++)
 				{
 					*(m_FeedBackInfo + i)= *(BD.pucData + i);
 				}
-				LINK.Status = Idle;
+				Status = Idle;
 				return err_Success;
 			}
 			itr++;
 		}
-		/*		LINK.m_bInterfaceLock = UNLOCKED;*/
-		LINK.Status = Idle;
+		/*		m_bInterfaceLock = UNLOCKED;*/
+		Status = Idle;
 		return err_MS_Pull_Invalid;
 	}else return err_MS_Pull_Invalid;
 	
 }
 errorCode CSingleton::fnFakeAbortTimer()
 {
-	LINK.m_bAsyLock = true;
+	m_bAsyLock = true;
 	return err_Success;
 }
 errorCode CSingleton::fnFakeRestartTimer()
 {
-	LINK.m_bAsyLock = false;
+	m_bAsyLock = false;
 	return err_Success;
 }
 errorCode CSingleton::fnManualIntterupt()
 {
-	//LINK.m_bInterfaceLock = LOCKED;//Ëø¶¨ÎªÃ¦×´Ì¬£¬ÏÂÒ»ÖÜÆÚ¿ªÊ¼Ê±ÎªÂÌÉ«Í¨µÀ
-	LINK.m_bGreenPath = UNLOCKED;
+	//m_bInterfaceLock = LOCKED;//Ëø¶¨ÎªÃ¦×´Ì¬£¬ÏÂÒ»ÖÜÆÚ¿ªÊ¼Ê±ÎªÂÌÉ«Í¨µÀ
+	m_bGreenPath = UNLOCKED;
 	return err_Success;
 }
 //¹ý³Ì¿ØÖÆ½Ó¿Ú£¬¾ßÌåÊ¹ÓÃÊ±£¬ÐèÒªÉÔ¼Óµ÷Õû
@@ -681,7 +643,7 @@ errorCode CSingleton::fnSendToBuffer(BYTE *m_ControlComd,int len,int *ComdID)
 	else
 	{
 		//µÍÓÅÏÈ¼¶ÃüÁî´¦Àí¶Î£¬Ä¿Ç°ÆôÓÃÖÐ
-		if(err_Success == LINK.fnInit()&&err_Success == LINK.fnBuffRoute(m_ControlComd,len,ComdID,0))
+		if(err_Success == fnInit()&&err_Success == fnBuffRoute(m_ControlComd,len,ComdID,0))
 		{
 			//m_bInterfaceLock = UNLOCKED;
 			return err_Success;
@@ -694,8 +656,14 @@ errorCode CSingleton::fnSendToBuffer(BYTE *m_ControlComd,int len,int *ComdID)
 }
 errorCode CSingleton::fnForce2WriteStatus()
 {
-	if((0 != m_vBufMaster.size()&&err_Success==LINK.fnFreeMemory(&m_vBufMaster[0])&&err_Success==LINK.fnPopBuffMaster()))m_bSynLock = WRITE;//CAUTION: EXECUTE WITHOUT TOO MUCH THINGKING
+	if((0 != m_vBufMaster.size()&&err_Success==fnFreeMemory(&m_vBufMaster[0])&&err_Success==fnPopBuffMaster()))m_bSynLock = WRITE;//CAUTION: EXECUTE WITHOUT TOO MUCH THINGKING
 	return err_Success;
+}
+errorCode CSingleton::fnReset()
+{
+	if(err_Success == fnFreeAllMemoryAndData())
+	return err_Success;
+	else return err_MS_IS_ABORT;
 }
 /*
 ProcErr ReceiveInfoBuffer(int ComdID,BYTE *m_FeedBackInfo,int len,int Waittime)
@@ -703,7 +671,7 @@ ProcErr ReceiveInfoBuffer(int ComdID,BYTE *m_FeedBackInfo,int len,int Waittime)
 // 	if(m_bInterfaceLock == UNLOCKED)
 // 	{
 // 		m_bInterfaceLock = LOCKED;
-		if(err_Success == LINK.fnInit()&&err_Success == LINK.fnBuffPull(ComdID,m_FeedBackInfo,len))
+		if(err_Success == fnInit()&&err_Success == fnBuffPull(ComdID,m_FeedBackInfo,len))
 		{
 			//m_bInterfaceLock = UNLOCKED;
 			return eMemMallocErr;
