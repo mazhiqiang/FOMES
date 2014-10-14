@@ -70,7 +70,7 @@ bool CPciProcess::fnPciReadMem(ULONG offset,unsigned int len,unsigned char* data
 }
 bool CPciProcess::fnPciReadMem(ULONG offset,ULONG& data)
 {
-	PLX_STATUS RET;
+	volatile PLX_STATUS RET;
 	RET = PlxPci_PciBarSpaceRead(
 		&pDevice,
 		BAR_3_SPACE_OFFSET,
@@ -205,12 +205,12 @@ UINT CPciProcess::fnPciIntThread(LPVOID pParam)
 		case ApiSuccess: 
 			//LINK.m_bAsyLock = true;
 			LINK.m_bAdvance = ADVANCE;
-			AfxMessageBox("Trigger!");
+			//AfxMessageBox("Trigger!");
 			break;
 		case ApiInvalidAddress:
-			AfxMessageBox("InvalidAddress!");
+			//AfxMessageBox("InvalidAddress!");
 		case ApiInvalidDeviceInfo:
-			AfxMessageBox("ApiInvalidDeviceInfo!");
+			//AfxMessageBox("ApiInvalidDeviceInfo!");
 		default:
 			//AfxMessageBox("Wrong!");
 			break;

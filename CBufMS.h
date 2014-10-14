@@ -17,6 +17,10 @@
 #define UPDATE_CMD_IS_INVALID 0x3434
 #define UPDATE_ERROR_RETRY 3
 #define UPDATE_INVALID_RETRY 3
+#define UPDATE_IS_RETURNED ((UINT)0x00005555)
+#define UPDATE_IS_UNRETURNED ((UINT)0x0000AAAA)
+
+#define UPDATE_INTERRUPT_FLAG_ADDRESS_OFFSET 0x2000
 
 #define DOWNLOAD_IS_READY 0x54540000
 #define DOWNLOAD_INFORM_SIZE 4
@@ -39,8 +43,12 @@
 
 #define MAX_DOWNLOAD_LENGTH 128
 #define BUFFER_ZERO 0
+#define BUF_SLAVE_SIZE 2048
 #define UNADVANCE true
 #define ADVANCE false
+
+#define DELETE_POINT(x) do{delete[] x;x = NULL;}while(0)
+#define LogComd 1
 using namespace std;
 enum PCI2DPS_Status
 {
@@ -101,10 +109,9 @@ class CSingleton
 private:
 	CSingleton()   //构造函数是私有的
 	{
-		m_iPeriod = 20;
-		m_iPrecision = 5;
+		m_iPeriod = 10;
+		m_iPrecision = 1;
 		m_TimerSlaveCount = 0;
-		m_bDualRamIsReady = true;
 		m_uicmdid = 0;
 		m_bIsInited = false;
 		m_bSynLock = WRITE;
@@ -140,8 +147,6 @@ private:
 	int m_TimerSlaveCount;
 	//窗体上显示轮询更新次数的空间ID
 	int m_TextSlaveCount;
-	//双口RAM的状态，默认情况下需要在其准备好的状态下进行数据的读写
-	bool m_bDualRamIsReady;
 	//数据传输的命令ID
 	unsigned int m_uicmdid;
 	CPciProcess PCIPro;

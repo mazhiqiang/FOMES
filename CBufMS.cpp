@@ -1,10 +1,12 @@
 #include "stdafx.h"
 #include "CBufMS.h"
-
+#include "..\SMTLogManage\SMTLogManage\SMTLogManage.h" //by mzq 2014.10.13
+#include "TypeConvert.h"//by mzq 2014.10.13
 
 //#include "EX_SDMDlg.h"
 #include "mmsystem.h" 
 #pragma comment(lib, "winmm.lib")
+#define  ModifiedByMzq
 
 //Éè¶¨»ò»ñµÃÖ÷´ÓËø¶¨µÄ×´Ì¬
 
@@ -95,7 +97,7 @@ errorCode CSingleton::fnBuffRoute(unsigned char* m_ControlComd,int len,int* Comd
 		return err_MS_Memory_Route_Invalid;
 	}
 	
-	unsigned int uicount = 0;
+	int uicount = 0;
 	unsigned char* buf = new unsigned char[len];
 	if(buf == NULL)return err_MS_Memory_Route_Invalid;
 	for (uicount = 0;uicount < len;uicount++)
@@ -131,9 +133,6 @@ errorCode CSingleton::fnRead(void)
 {
 	unsigned char* pucRemark = new unsigned char[REMARK_LENGTH];
 	BufData updateData;
-// 						updateData.iCmd = 0;
-// 						updateData.iLength = 0;
-// 						updateData.iCheckCode = 0;
 	int icount;
 	if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_REMARK_ADDRESS_OFFSET,REMARK_LENGTH,pucRemark))
 	{
@@ -144,9 +143,7 @@ errorCode CSingleton::fnRead(void)
 	}else 
 	{
 		m_ucReadRetry++;
-		m_bDualRamIsReady = true;
-		delete[] pucRemark;
-		pucRemark = NULL;
+		DELETE_POINT(pucRemark);
 		return err_PCI_Read_Memory_Invalid;
 	}
 	unsigned char* pucData = new unsigned char[updateData.iLength];
@@ -161,12 +158,9 @@ errorCode CSingleton::fnRead(void)
 		//Ð£ÑéÂëºË¶Ô³ö´í£¬ÔòÇå¿Õ´æ´¢Êý¾ÝµÄÄÚ´æ
 		if((icheckword&0xFF) != updateData.iCheckCode)
 		{
-			delete[] pucRemark;
-			pucRemark = NULL;
-			delete[] pucData;
-			pucData = NULL;
+			DELETE_POINT(pucRemark);
+			DELETE_POINT(pucData);
 			m_ucReadRetry++;//¶ÁÈ¡Êý¾ÝµÄÐ£ÑéÂëÓÐ´í£¬ÐèÒªÖØÊÔ,´íÈý´ÎÍùÉÏÍ±
-			m_bDualRamIsReady = true;
 			m_bSynLock = WRITE;
 			return err_MS_Check_Code_Invalid;
 		}else
@@ -176,24 +170,26 @@ errorCode CSingleton::fnRead(void)
 			if(InterfaceRead != Status)//Ð´ÈëSVector£¬´ËÊ±²»Ó¦¸ÃÎªInterfaceRead×´Ì¬
 			{
 				Status = RAMRead;
+#ifdef ModifiedByMzq
+				//¹ÜÀíÑ­»·¶ÓÁÐm_vBufSlave
+				if (m_vBufSlave.size()>BUF_SLAVE_SIZE)
+				{
+					fnBuffPop(m_vBufSlave[0].iCmd,&m_vBufSlave);
+				}
+#endif
 				m_vBufSlave.push_back(updateData);
 				Status = Idle;
 			}else return err_PCI_Read_Memory_Invalid;
 		}
 	}else  
 	{
-		delete[] pucRemark;
-		pucRemark = NULL;
-		delete[] pucData;
-		pucData = NULL;
-		m_bDualRamIsReady = true;
+		DELETE_POINT(pucRemark);
+		DELETE_POINT(pucData);
 		m_ucReadRetry++;
 		return	err_PCI_Read_Memory_Invalid;
 	}
 						
-	delete[] pucRemark;
-	pucRemark = NULL;
-
+	DELETE_POINT(pucRemark);
 	//Íê³É¶ÁÈÎÎñ£¬´ËÊ±ÐèÒª½«±£ÓÐµÄÐÅÏ¢¼°ÄÚ´æÊÍ·Å
 	if(InterfaceWrite != Status)
 	{
@@ -201,7 +197,6 @@ errorCode CSingleton::fnRead(void)
 		if(!(err_Success==fnBuffPop(updateData.iCmd,&m_vBufMaster)))
 		{
 			Status = Idle;
-			m_bDualRamIsReady = true;
 			m_ucReadRetry++;//ÊÍ·ÅÄÚ´æ³öÏÖÎÊÌâ
 			return err_MS_Memory_Free_Invalid;
 		}
@@ -211,7 +206,6 @@ errorCode CSingleton::fnRead(void)
 	m_ucErrorRetry = 0;
 	m_ucReadRetry = 0;//Çå³ý¶ÁÐ´ÖØÊÔ´ÎÊý
 	m_bSynLock = WRITE;
-	m_bDualRamIsReady = true;
 	return err_Success;
 }
 
@@ -222,46 +216,45 @@ errorCode CSingleton::fnWrite(void)
 		Status = RAMWrite;//²Ù×÷MVector
 		if (0 != m_vBufMaster.size()||0 != m_vBufAdvance.size())
 		{	
-			m_bDualRamIsReady = false;//ÏòË«¿ÚRAMÐ´£¬²¢Ëø¶¨×´Ì¬
 			if(0 != m_vBufMaster.size()&&err_Success==fnHardProc(&m_vBufMaster[BUFFER_ZERO])) 
 			{
 				Status = Idle;
 				m_bSynLock = READ;
-				//fnSetLockS(false);
-				m_bDualRamIsReady = true;
-
-				fnSetTimerSlaveCount(fnGetTimerSlaveCount()+1);
 				m_ucInvalidRetry = 0;
 				m_ucErrorRetry = 0;
+#if LogComd
+				string Logcontent = "PCI Route {ComdID =" ;
+				Logcontent += TypeConvert <short, string>(m_vBufMaster[BUFFER_ZERO].iCmd);
+				Logcontent += "}";
+				LogManage& CurLog=LogManage::GetInit();//»ñÈ¡ÈÕÖ¾ÀàÊµÀý£¬Ö±µ½³ÌÐò½áÊøÇ°ÊÖ¶¯Îö¹¹µô
+				WriteLogMessage(Logcontent ,SMT_WARN,LOG_FDINFO);
+#endif
 				return err_Success;
 			}else
 			{					
 				Status = Idle;
-				//fnSetLockS(false);
-				m_bDualRamIsReady = true;
 				m_ucInvalidRetry++;
 				return err_MS_Memory_Trans_Invalid;
 			}					
 		}else 
 		{
 			Status = Idle;
-			m_bDualRamIsReady = true;
-			//m_ucInvalidRetry++;
 			return err_PCI_Write_Memory_Invalid;
 		}
 	}
-	m_bDualRamIsReady = true;
+	return err_Success;
 }
 errorCode CSingleton::fnBuffTrans()//²»ÔÚÂÌÉ«Í¨µÀÇé¿öÏÂ£¬³£¹æÇé¿ö£¬Õý³£Êý¾Ý¹ÜµÀÆð×÷ÓÃ
 {
-	
-	if (!m_bDualRamIsReady)
+#if 0	
+	if (0)
 	{
 		return err_MS_Memory_Trans_Invalid;
 	}
 	if (m_ucInvalidRetry >= UPDATE_ERROR_RETRY 
 		|| m_ucErrorRetry >= UPDATE_INVALID_RETRY||m_ucReadRetry >= UPDATE_ERROR_RETRY)
 	{
+
 		//ÕâÀïÍ±ÉÏÈ¥,sendmessage
 		//Ä¿Ç°³ö´íµÄ½â¾ö°ì·¨ÊÇÇå¿ÕÄÚ´æ£¬ÕâÑùµÄ´íÎóÀ´×ÔÓ²¼þ
 		if(err_Success == fnFreeAllMemoryAndData())
@@ -282,70 +275,66 @@ errorCode CSingleton::fnBuffTrans()//²»ÔÚÂÌÉ«Í¨µÀÇé¿öÏÂ£¬³£¹æÇé¿ö£¬Õý³£Êý¾Ý¹ÜµÀÆ
 
 		return err_MS_IS_ABORT;
 	}
+#endif
 	//Ëø¶¨ÏòÓ²¼þÐ´Êý¾ÝµÄ×´Ì¬
-	//fnSetLockS(false);//Ã»ÆôÓÃ
 	ULONG ulFeedbackData;//»ñÈ¡Ë«¿ÚRAMÊý¾Ý
-	if(m_bAsyLock)
+	ULONG ulFeedbackInterruptFlag;
+	if(m_bSynLock == WRITE)
 	{
-		//fnSetLockS(false);
-		return err_MS_IS_ABORT;
+		fnWrite();  // yu
+		m_vBufMaster;
 	}
-	else
-	{	//²é¿´Ë«¿ÚRAMµÄ¶ÁÐ´×´Ì¬£¬ÔÚ¿É¶ÁÐ´Çé¿öÏÂ½øÐÐÊý¾Ý´«Êä
-		if(m_bDualRamIsReady)
-		{//¶Á×´Ì¬£¬¶ÁÍ¬²½ËøµÄ×´Ì¬£¬Í¬²½ËøÎª¶Á·½¿É½øÐÐ¶Á×´Ì¬
-			m_bDualRamIsReady = false;//ÇÐ»»Ë«¿ÚRAMµÄ¶ÁÐ´×´Ì¬£¬·ÀÖ¹¶à´Î²Ù×÷
-			if(m_bSynLock == WRITE)
-			{
-				fnWrite();
-				m_vBufMaster;
-				
-				//m_bSynLock = READ;
-			}
-			else if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_BACK_ADDRESS_OFFSET,ulFeedbackData))
-			{							
- 				switch (ulFeedbackData&0x0000FFFF)
+	else{
+		
+		//if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_INTERRUPT_FLAG_ADDRESS_OFFSET,ulFeedbackInterruptFlag))
+		//{UPDATE_IS_RETURNED == (ulFeedbackInterruptFlag&0xFFFF)&&
+			if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_BACK_ADDRESS_OFFSET,ulFeedbackData))
+			{		
+				switch (ulFeedbackData&0x0000FFFF)
 				{
 				case UPDATE_FEEDBACK_INFO_IS_READY://Ö¸¶¨µÄÎ»ÖÃÓÐÊý¾Ý£¬¿ÉÒÔ½øÐÐÈ¡Êý¾Ý£»
-					fnRead();
-					//fnWrite();
+					fnRead();  
+					m_ucReadRetry = 0;
 					break;
 				case UPDATE_CHECK_WORD_IS_INVALID://Ð£ÑéÂë³ö´í£¬ÐèÒªÖØÐÂ·¢ËÍÖ¸Áî£»
 					{
 						m_ucErrorRetry++;
-						m_bDualRamIsReady = true;
+						m_ucReadRetry = 0;
 						return err_PCI_Read_Memory_Invalid;
 					}
 					break;
 				case UPDATE_CMD_IS_INVALID://Ö¸ÁîÎÞÒâÒå£¬ÐèÒªÖØÐÂ·¢ËÍÖ¸Áî£»
 					{
 						m_ucInvalidRetry++;
-						m_bDualRamIsReady = true;
+						m_ucReadRetry = 0;
 						return err_PCI_Read_Memory_Invalid;
 					}
 					break;
 				default:
-					m_bDualRamIsReady = true;
 					m_ucInvalidRetry = 0;
 					m_ucErrorRetry = 0;
+					m_ucReadRetry++;
+					if(m_ucReadRetry > 100)
+					{
+						m_bSynLock = WRITE;
+						m_ucReadRetry = 0;
+					}	
 					return err_Success;//´ËÊ±±íÊ¾Ã»ÓÐÐ´ÈëÖ¸¶¨Êý¾Ý£¬¿ÉÄÜÊÇÓ²¼þÃ¦×´Ì¬
 					break;
 				}
-			}else
-			{
-				if(m_ucReadRetry < READ_TRY)m_ucReadRetry++;
-				else m_bSynLock = READ;//ÕâÀïÊÇ¸öÀ×
-				m_bDualRamIsReady = true;
-				return err_PCI_Read_Memory_Invalid;
 			}
-	}else return err_MS_IS_ABORT;
-}
+		//}
+		else 
+		{
+			return err_MS_Memory_Route_Invalid;
+		}
+	}
 	return err_Success;
 }
 //Ä£ÄâµÄÓ²¼þ´¦Àí³ÌÐò
 errorCode CSingleton::fnHardProc(sBufData* bd)
 {
-	unsigned int uicount = 0;
+	int uicount = 0;
 	unsigned short icheckword = 0;
 	//¼ÆËãÐ£ÑéÂë
 	for (uicount = 0;uicount < bd->iLength;uicount++)
@@ -353,6 +342,7 @@ errorCode CSingleton::fnHardProc(sBufData* bd)
 		icheckword += *(bd->pucData+uicount);
 	}
 	icheckword &= 0x00FF;
+	bd->iCheckCode = icheckword;
 	//×é×°Ð´Êý¾ÝµÄ½á¹¹Ìå
 	DataRemark tmpData;
 	tmpData.ulCmdid = bd->iCmd;
@@ -376,8 +366,7 @@ errorCode CSingleton::fnHardProc(sBufData* bd)
 			return err_PCI_Write_Memory_Invalid;
 		}
 		if(!(PCIPro.fnPciWriteMem(BASE_ADDRESS + DOWNLOAD_REMARK_ADDRESS_OFFSET,(unsigned char*)&tmpData,sizeof(tmpData))
-			&&PCIPro.fnPciWriteMem(BASE_ADDRESS + DOWNLOAD_INFORM_ADDRESS_OFFSET,(ULONG)DOWNLOAD_IS_READY))
-			)
+			&&PCIPro.fnPciWriteMem(BASE_ADDRESS + DOWNLOAD_INFORM_ADDRESS_OFFSET,(ULONG)DOWNLOAD_IS_READY)))
 		{
 			return err_PCI_Write_Memory_Invalid;
 		}
@@ -389,10 +378,11 @@ errorCode CSingleton::fnHardProc(sBufData* bd)
 			&&PCIPro.fnPciWriteMem(BASE_ADDRESS + DOWNLOAD_INFORM_ADDRESS_OFFSET,(ULONG)DOWNLOAD_IS_READY))
 			)
 			{
+/*				(ULONG)((ULONG)((bd->iCmd<<16)+bd->iCmd))*/
 				return err_PCI_Write_Memory_Invalid;
 			}
 	}
-	return err_Success;
+	return err_Success; 
 }
 //ÊÍ·Åbd³ÖÓÐÐÅÏ¢µÄÄÚ´æ¿é
 errorCode CSingleton::fnFreeMemory(sBufData* bd)
@@ -403,9 +393,7 @@ errorCode CSingleton::fnFreeMemory(sBufData* bd)
 	{
 		return err_MS_Memory_Free_Invalid;
 	}
-
-	delete[] puiTestData;
-	puiTestData = NULL;
+	DELETE_POINT(puiTestData);
 
 	return err_Success;
 }
@@ -421,7 +409,6 @@ errorCode CSingleton::fnPopBuffMaster()
 	}
 	vector<BufData>::iterator itr = m_vBufMaster.begin();
 	m_vBufMaster.erase(itr);
-	m_bDualRamIsReady = true;
 	return err_Success;
 }
 
@@ -433,7 +420,6 @@ errorCode CSingleton::fnPopBuffAdvance()
 	}
 	vector<BufData>::iterator itr = m_vBufAdvance.begin();
 	m_vBufAdvance.erase(itr);
-	m_bDualRamIsReady = true;
 	return err_Success;
 }
 errorCode CSingleton::fnFreeAllMemoryAndData()//Without Too Much Thinking 20141003
@@ -517,7 +503,7 @@ CString CSingleton::fnExData(BufData* BD)
 	title = _T("Data:\n");
 	unsigned char* puiData = BD->pucData;
 	//½«Ö¸ÕëÖ¸ÏòÁ´Â·²ã¹ÜÀíÄÚ´æÖÐ£¬¾ßÓÐµ±Ç°ÐÅÏ¢µÄÊý¾ÝËùÔÚµÄÎ»ÖÃ
-	unsigned int uicount;
+	int uicount;
 	csShow.Format(_T("%s"),title);
 	for (uicount = 0;uicount < BD->iLength;uicount++)
 	{
@@ -549,9 +535,14 @@ void CSingleton::fnEnableIntterupt()
 {
 	if(!m_bIsInited)PCIPro.fnPciStartThread();
 }
+
+volatile static long int x = 0;
+
 void PASCAL CallBackFunc(UINT wTimerID, UINT msg,DWORD dwUser,DWORD dwl,DWORD dw2) 
 {
-	LINK.fnSetWindowText(LINK.fnGetCWnd(),LINK.fnGetTimerSlaveCount(),LINK.fnGetTextTimerSlaveID());
+	//LINK.fnSetWindowText(LINK.fnGetCWnd(),LINK.fnGetTimerSlaveCount(),LINK.fnGetTextTimerSlaveID());
+
+
 	if(true)
 	{
 		switch(LINK.fnBuffTrans())
@@ -574,9 +565,9 @@ void PASCAL CallBackFunc(UINT wTimerID, UINT msg,DWORD dwUser,DWORD dwl,DWORD dw
 }
 bool CSingleton::InitTimerCheckSlave()
 {
-	::timeSetEvent (LINK.fnGetTimerPeriodms(), LINK.fnGetTimerPrecisionms(),
+	::timeSetEvent (fnGetTimerPeriodms(), fnGetTimerPrecisionms(),
 		CallBackFunc,NULL,TIME_PERIODIC); 
-	LINK.fnEnableIntterupt();
+	fnEnableIntterupt();
 	return true;
 }
 errorCode CSingleton::fnReleasePCI()
@@ -587,6 +578,10 @@ errorCode CSingleton::fnReleasePCI()
 //½Ó¿Ú²âÊÔÉÐÎ´ÍêÕû²âÊÔ£¬Ô­Òò£¬¹ý³Ì¿ØÖÆ´úÂëÎÞ·¨Âú×ãÂÖÑ¯Ìõ¼þ
 errorCode CSingleton::fnBuffPull(int ComdID,BYTE *m_FeedBackInfo,int len,int Waittime)
 {
+	UINT uiCountMS = 0;
+	int iSleepTimeMS = 50;
+	while(1)
+	{
 	if(RAMRead != Status)
 	{
 		Status = InterfaceRead;
@@ -597,7 +592,6 @@ errorCode CSingleton::fnBuffPull(int ComdID,BYTE *m_FeedBackInfo,int len,int Wai
 			{
 				BufData BD = *itr;
 				itr = m_vBufSlave.erase(itr);
-				/*				m_bInterfaceLock = UNLOCKED;*/
 				int i;
 				for (i = 0;i < len;i++)
 				{
@@ -608,11 +602,13 @@ errorCode CSingleton::fnBuffPull(int ComdID,BYTE *m_FeedBackInfo,int len,int Wai
 			}
 			itr++;
 		}
-		/*		m_bInterfaceLock = UNLOCKED;*/
 		Status = Idle;
-		return err_MS_Pull_Invalid;
+		uiCountMS++;
+		Sleep(iSleepTimeMS);
+		if ((int)(uiCountMS*iSleepTimeMS) > Waittime)
+			return err_MS_Pull_Invalid;
 	}else return err_MS_Pull_Invalid;
-	
+	}
 }
 errorCode CSingleton::fnFakeAbortTimer()
 {
@@ -636,6 +632,7 @@ errorCode CSingleton::fnSendToBuffer(BYTE *m_ControlComd,int len,int *ComdID)
 // 	if(m_bInterfaceLock == UNLOCKED)
 // 	{
 // 		m_bInterfaceLock = LOCKED;
+	
 	if(false)
 	{
 		//¸ßÓÅÏÈ¼¶ÃüÁî´¦Àí¶Î£¬Ä¿Ç°Î´ÆôÓÃ

@@ -1,8 +1,9 @@
 #ifndef __CPLXPCI_H__
 #define __CPLXPCI_H__
-#include "./Plx/PlxSdk/Include/PlxApi.h"
+#include <PCI/PlxApi.h>
 #include <vector>
 #include <iostream>
+#pragma comment(lib, "PlxApi.lib")
 
 
 #define VENDOR_ID 0x10B5
