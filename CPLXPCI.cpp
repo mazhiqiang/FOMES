@@ -28,30 +28,36 @@ bool CPciProcess::fnPciInit()
 	PLX_STATUS RET;
 	pKey.VendorId = m_uiVendorId;
 	pKey.DeviceId = m_uiDeviceId;
+	do 
+	{
+		m_bIsBusy = false;
+	} while (m_bIsBusy);
+	PCI_SET_BUSY;
 	RET = PlxPci_DeviceFind(&pKey,SELECT_1ST_DEVICE);
 	if (RET != ApiSuccess)
 	{
-		//MessageBox("请检查板卡是否异常。 ");
+		PCI_SET_IDLE;
 		return false;
 	}
 	RET = PlxPci_DeviceOpen(&pKey,&pDevice); 
 	if (RET != ApiSuccess)
 	{
-		//MessageBox("出错了！请检查板卡是否异常。 ");
+		PCI_SET_IDLE;
 		return false;
-	}
+	}	
 	PLX_STATUS pStatusa;
 	PLX_STATUS pStatusb;
 	ULONG data;
 	data = PlxPci_PlxRegisterRead(&pDevice,REGISTER_SPACE1_OFFSET, &pStatusa);
 	pStatusb = PlxPci_PlxRegisterWrite(&pDevice,REGISTER_SPACE1_OFFSET, data | REGISTER_SPACE_ENABLE_MASK);
-	//return fnPciStartThread();
+	PCI_SET_IDLE;
 	return true;
 }
 //读内存
 bool CPciProcess::fnPciReadMem(ULONG offset,unsigned int len,unsigned char* data)
 {
 	PLX_STATUS RET;
+	PCI_SET_BUSY;
 	RET = PlxPci_PciBarSpaceRead(
 		&pDevice,
 		BAR_3_SPACE_OFFSET,
@@ -64,13 +70,16 @@ bool CPciProcess::fnPciReadMem(ULONG offset,unsigned int len,unsigned char* data
 
 	if (RET != ApiSuccess)
 	{
+		PCI_SET_IDLE;
 		return false;
 	}
+	PCI_SET_IDLE;
 	return true;
 }
 bool CPciProcess::fnPciReadMem(ULONG offset,ULONG& data)
 {
 	volatile PLX_STATUS RET;
+	PCI_SET_BUSY;
 	RET = PlxPci_PciBarSpaceRead(
 		&pDevice,
 		BAR_3_SPACE_OFFSET,
@@ -83,15 +92,17 @@ bool CPciProcess::fnPciReadMem(ULONG offset,ULONG& data)
 
 	if (RET != ApiSuccess)
 	{
+		PCI_SET_IDLE;
 		return false;
 	}
+	PCI_SET_IDLE;
 	return true;
 }
 //写内存
 bool CPciProcess::fnPciWriteMem(ULONG offset, unsigned char* data,unsigned int len)
 {
 	PLX_STATUS RET;
-
+	PCI_SET_BUSY;
 	RET = PlxPci_PciBarSpaceWrite(
 		&pDevice,
 		BAR_3_SPACE_OFFSET,
@@ -103,13 +114,16 @@ bool CPciProcess::fnPciWriteMem(ULONG offset, unsigned char* data,unsigned int l
 		);
 	if (RET!=ApiSuccess)
 	{
+		PCI_SET_IDLE;
 		return false;
 	}
+	PCI_SET_IDLE;
 	return true;
 }
 bool CPciProcess::fnPciWriteMem(ULONG offset, ULONG data)
 {
 	PLX_STATUS RET;
+	PCI_SET_BUSY;
 	RET = PlxPci_PciBarSpaceWrite(
 		&pDevice,
 		BAR_3_SPACE_OFFSET,
@@ -121,13 +135,16 @@ bool CPciProcess::fnPciWriteMem(ULONG offset, ULONG data)
 		);
 	if (RET!=ApiSuccess)
 	{
+		PCI_SET_IDLE;
 		return false;
 	}
+	PCI_SET_IDLE;
 	return true;
 }
 bool CPciProcess::fnPciWriteMem(ULONG offset, short data)
 {
 	PLX_STATUS RET;
+	PCI_SET_BUSY;
 	RET = PlxPci_PciBarSpaceWrite(
 		&pDevice,
 		BAR_3_SPACE_OFFSET,
@@ -139,8 +156,10 @@ bool CPciProcess::fnPciWriteMem(ULONG offset, short data)
 		);
 	if (RET!=ApiSuccess)
 	{
+		PCI_SET_IDLE;
 		return false;
 	}
+	PCI_SET_IDLE;
 	return true;
 }
 //读寄存器
@@ -148,8 +167,9 @@ ULONG CPciProcess::fnPciReadReg(ULONG offset)
 {
 	ULONG data = 0;
 	PLX_STATUS pStatus;
-
+	PCI_SET_BUSY;
 	data = PlxPci_PlxRegisterRead(&pDevice,offset, &pStatus);
+	PCI_SET_IDLE;
 	return data;
 }
 //写寄存器
@@ -163,22 +183,25 @@ bool CPciProcess::fnPciClose()
 	PLX_STATUS RET;
 
 	PLX_STATUS pStatus;
-	
+	PCI_SET_BUSY;
 	pStatus = PlxPci_InterruptDisable(&pDevice,&pPlxIntr);
 
 	RET = PlxPci_DeviceClose(&pDevice);
-		
+	PCI_SET_IDLE;	
 	if (RET != ApiSuccess)
 	{
-		//AfxMessageBox("设备关闭遇到问题！");
+		PCI_SET_IDLE;
 		return false;
 	}
+	PCI_SET_IDLE;
 	return true;
 }
 //启动中断线程
 bool CPciProcess::fnPciStartThread()
 {
+	PCI_SET_BUSY;
 	CWTThread = AfxBeginThread(fnPciIntThread, this);
+	PCI_SET_IDLE;
 	return true;
 }
 //初始化线程
@@ -192,7 +215,7 @@ UINT CPciProcess::fnPciIntThread(LPVOID pParam)
 	{
 		CPciProcess *port = (CPciProcess*)pParam;
 
-
+		//PCI_SET_BUSY;
 		pStatus = PlxPci_InterruptEnable(&(port->pDevice),&(port->pPlxIntr));
 
 		data = PlxPci_PlxRegisterRead(&(port->pDevice),0x68,&pStatus);
@@ -216,9 +239,21 @@ UINT CPciProcess::fnPciIntThread(LPVOID pParam)
 			break;
 		}
 		pStatus = PlxPci_NotificationCancel(&(port->pDevice),&(port->pEvent));
+		//PCI_SET_IDLE;
 	} while (1);
-	
-	
 	return 0;
 }
 
+void CPciProcess::fnDelay()
+{
+	int ipi,ipj,ipk;
+	for (ipi = 0;ipi<100;ipi++)
+	{
+		for (ipj = 0;ipj<100;ipj++)
+		{
+			for (ipk = 0;ipk<100;ipk++)
+			{
+			}
+		}
+	}
+}

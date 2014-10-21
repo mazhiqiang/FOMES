@@ -46,9 +46,12 @@
 #define BUF_SLAVE_SIZE 2048
 #define UNADVANCE true
 #define ADVANCE false
-
-#define DELETE_POINT(x) do{delete[] x;x = NULL;}while(0)
 #define LogComd 1
+#define DELETE_POINT(x) do{delete[] x;x = NULL;}while(0)
+#define REWRITE_TIME 200
+#define REWRITE_ZERO 0
+#define LOW16_MASK ((ULONG)(0x0000FFFF))
+#define LOW8_MASK ((unsigned char)(0x00FF))
 using namespace std;
 enum PCI2DPS_Status
 {
@@ -94,7 +97,6 @@ typedef struct sBufData
 	int iCmd;
 	int iLength;
 	int iCheckCode;
-	ULONG uiOffset;
 }BufData;
 
 typedef struct sDataRemark
@@ -110,7 +112,7 @@ private:
 	CSingleton()   //构造函数是私有的
 	{
 		m_iPeriod = 10;
-		m_iPrecision = 1;
+		m_iPrecision = 2;
 		m_TimerSlaveCount = 0;
 		m_uicmdid = 0;
 		m_bIsInited = false;
@@ -121,7 +123,8 @@ private:
 		m_bInterfaceLock = UNLOCKED;
 		m_bGreenPath = LOCKED;
 		m_bGreenPathStatus = WRITE;
-		Status = Idle;
+		StatusMaster = Idle;
+		StatusSlave = Idle;
 		m_bAdvance = UNADVANCE;
 		P2DStatus = P2D_WRITE;
 
@@ -159,6 +162,7 @@ private:
 	unsigned char m_ucErrorRetry;
 	unsigned char m_ucInvalidRetry;
 	unsigned char m_ucReadRetry;
+	errorCode fnDelay();
 public:
 	
 	bool m_bSynLock;	//only debug,clear them later on 
@@ -166,7 +170,8 @@ public:
 	bool m_bInterfaceLock;
 	bool m_bGreenPath;
 	bool m_bGreenPathStatus;
-	LinkState Status;
+	LinkState StatusMaster;
+	LinkState StatusSlave;
 	bool m_bAdvance;
 	//static BufData sBufM;
 	static CSingleton & GetInstance()
@@ -183,30 +188,19 @@ public:
 	//bool fnSetLockM(bool tmp);
 	//bool fnSetLockS(bool tmp);
 	//bool fnGetLockS();
-	bool fnSetWindowText(CWnd* cwnd,int iconten,unsigned int iposition);
-	bool fnSetWindowText(CWnd* cwnd,CString iconten,unsigned int iposition);
-	int fnGetTimerPeriodms();
-	void fnSetTimerPeriodms(int itimerperiod);
-	int fnGetTimerPrecisionms();
-	void fnSetTimerPrecisionms(int itimerprecisionms);
+
 	//winform information
 	void fnSetCWnd(CWnd* cwnd);
 	CWnd* fnGetCWnd();
-	//only debug,clear them later on 
-	errorCode fnBuffPull2WinForm(const UINT uicmdid,BufData* BD);
-	CString fnExData(BufData* BD);
-	int fnGetTimerSlaveCount();
-	void fnSetTimerSlaveCount(int icount);
-	void fnSetTextTimerSlaveID(int idc);
-	int fnGetTextTimerSlaveID();
+
 	//memory
 	errorCode fnFreeMemory(sBufData* bd);//20140820
-	errorCode fnPopBuffMaster();	//only debug,clear them later on 
-	errorCode fnPopBuffAdvance();	//only debug,clear them later on 
+	//errorCode fnPopBuffMaster();	//only debug,clear them later on 
+	//errorCode fnPopBuffAdvance();	//only debug,clear them later on 
 	errorCode fnBuffPop(const UINT ,std::vector<BufData>*);
 	errorCode fnFreeAllMemoryAndData();
 	//procedure 
-	errorCode fnBuffRoute(unsigned char* m_ControlComd,int len,int* ComdID,unsigned int uioffset);
+	errorCode fnBuffRoute(unsigned char* m_ControlComd,int len,int* ComdID);
 	errorCode fnBuffTrans();
 	errorCode fnHardProc(sBufData* bd);
 	bool InitTimerCheckSlave();

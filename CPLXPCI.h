@@ -15,6 +15,9 @@
 #define BAR_2_SPACE_OFFSET 2
 #define BAR_3_SPACE_OFFSET 3
 #define SELECT_1ST_DEVICE 0
+
+#define PCI_SET_BUSY while(m_bIsBusy) ;m_bIsBusy = true
+#define PCI_SET_IDLE m_bIsBusy = false;fnDelay();
 using namespace std;
 
 
@@ -27,7 +30,7 @@ private:
 	PLX_NOTIFY_OBJECT pEvent;
 	unsigned int m_uiVendorId;
 	unsigned int m_uiDeviceId;
-
+	bool m_bIsBusy;
 public:
 	CPciProcess();//构造函数，在构造过程中应该实现硬件配置值的设定
 	~CPciProcess();
@@ -42,7 +45,9 @@ public:
 	void fnPciWriteReg(ULONG offset, unsigned char* data);//写内存
 	bool fnPciClose();//关闭PCI设备
 	bool fnPciStartThread();//启动中断线程
+	static void fnDelay();
 	static UINT fnPciIntThread(LPVOID pParam);//初始化线程
+	//UINT fnPciIntThread(LPVOID pParam);//初始化线程
 	CWinThread* CWTThread;	
 };
 #endif
