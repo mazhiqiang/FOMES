@@ -214,28 +214,63 @@ UINT CPciProcess::fnPciIntThread(LPVOID pParam)
 	do 
 	{
 		CPciProcess *port = (CPciProcess*)pParam;
-
+		while(port->m_bIsBusy) ;
+		port->m_bIsBusy = true;
 		//PCI_SET_BUSY;
+		
 		pStatus = PlxPci_InterruptEnable(&(port->pDevice),&(port->pPlxIntr));
 
 		data = PlxPci_PlxRegisterRead(&(port->pDevice),0x68,&pStatus);
 		pStatus = PlxPci_PlxRegisterWrite(&(port->pDevice),0x68,data | 0x8800);
 		port->pPlxIntr.LocalToPci = 0x00000001;
 		pStatus = PlxPci_NotificationRegisterFor(&(port->pDevice),&(port->pPlxIntr),&(port->pEvent));
+		port->m_bIsBusy = false;
+
 		pStatus = PlxPci_NotificationWait(&(port->pDevice),&(port->pEvent),PLX_TIMEOUT_INFINITE);
 
-		switch(pStatus) {
+		switch(pStatus)
+		{
 		case ApiSuccess: 
-			//LINK.m_bAsyLock = true;
-			LINK.m_bAdvance = ADVANCE;
-			//AfxMessageBox("Trigger!");
+			{
+				//LINK.m_bAsyLock = true;
+				//MessageBox(LINK.m_pCWnd->m_hWnd,0,0,0);
+				//Get Button Value 
+				ULONG ulErrorLength;
+				ULONG ulErrorVeryCode;
+				if(!(port->fnPciReadMem(UPDATE_ERROR_LENGTH_ADDRESS_OFFSET,ulErrorLength)
+					&&port->fnPciReadMem(UPDATE_ERROR_VERY_CODE_ADDRESS_OFFSET,ulErrorVeryCode)))
+				{
+					//Send Fatal Error to Windows
+				}
+				else
+				{
+					if(0xFF>ulErrorLength)
+					{
+						unsigned char* ucpErrorValue = new unsigned char[ulErrorLength];
+						if(!(port->fnPciReadMem(UPDATE_ERROR_ADDRESS_OFFSET,(int)ulErrorLength,ucpErrorValue)))
+						{
+							//Send Fatal Error to Windows
+						}
+						else
+						{
+							//Send Error Value to Windows
+						}
+						DELETE_POINT(ucpErrorValue);
+					}
+					else
+					{
+						//Send Error Value to Windows
+					}
+				}
+
+			}		
 			break;
 		case ApiInvalidAddress:
-			//AfxMessageBox("InvalidAddress!");
+			//Send Fatal Error to Windows
 		case ApiInvalidDeviceInfo:
-			//AfxMessageBox("ApiInvalidDeviceInfo!");
+			//Send Fatal Error to Windows
 		default:
-			//AfxMessageBox("Wrong!");
+			//Send Fatal Error to Windows
 			break;
 		}
 		pStatus = PlxPci_NotificationCancel(&(port->pDevice),&(port->pEvent));
@@ -247,7 +282,7 @@ UINT CPciProcess::fnPciIntThread(LPVOID pParam)
 void CPciProcess::fnDelay()
 {
 	int ipi,ipj,ipk;
-	for (ipi = 0;ipi<100;ipi++)
+	for (ipi = 0;ipi<300;ipi++)
 	{
 		for (ipj = 0;ipj<100;ipj++)
 		{

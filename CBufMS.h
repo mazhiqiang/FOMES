@@ -9,11 +9,18 @@
 #define WM_MYMESSAGE WM_USER+100
 
 #define BASE_ADDRESS 0
+#define UPDATE_INTERACTIVE_ADDRESS_OFFSET 0x1C00
+#define UPDATE_WRITE_IDLE_ADDRESS_OFFSET (UPDATE_INTERACTIVE_ADDRESS_OFFSET + 0x00)
 #define UPDATE_BACK_ADDRESS_OFFSET 0x1FFC
 #define UPDATE_REMARK_ADDRESS_OFFSET 0x17F8
 #define UPDATE_DATA_ADDRESS_OFFSET 0x1000
+#define UPDATE_ERROR_ADDRESS_OFFSET 0x1800
+#define UPDATE_ERROR_LENGTH_ADDRESS_OFFSET 0x1BFC
+#define UPDATE_ERROR_VERY_CODE_ADDRESS_OFFSET 0x1BFE
+
 #define UPDATE_FEEDBACK_INFO_IS_READY 0x1212
 #define UPDATE_CHECK_WORD_IS_INVALID 0x2323
+#define UPDATE_WRITE_IS_IDLE 0xABCD
 #define UPDATE_CMD_IS_INVALID 0x3434
 #define UPDATE_ERROR_RETRY 3
 #define UPDATE_INVALID_RETRY 3
@@ -46,7 +53,7 @@
 #define BUF_SLAVE_SIZE 2048
 #define UNADVANCE true
 #define ADVANCE false
-#define LogComd 1
+//#define LogComd 1
 #define DELETE_POINT(x) do{delete[] x;x = NULL;}while(0)
 #define REWRITE_TIME 200
 #define REWRITE_ZERO 0
@@ -111,8 +118,8 @@ class CSingleton
 private:
 	CSingleton()   //构造函数是私有的
 	{
-		m_iPeriod = 10;
-		m_iPrecision = 2;
+		m_iPeriod = 2;
+		m_iPrecision = 1;
 		m_TimerSlaveCount = 0;
 		m_uicmdid = 0;
 		m_bIsInited = false;
@@ -144,8 +151,7 @@ private:
 	//当前操作的数据块的信息
 	BufData m_sCurMaster;
 	BufData m_sCurSlave;
-	//窗体指针
-	CWnd* m_pCWnd;
+	
 	//轮询定时器更新的次数
 	int m_TimerSlaveCount;
 	//窗体上显示轮询更新次数的空间ID
@@ -164,7 +170,8 @@ private:
 	unsigned char m_ucReadRetry;
 	errorCode fnDelay();
 public:
-	
+	//窗体指针
+	CWnd* m_pCWnd;
 	bool m_bSynLock;	//only debug,clear them later on 
 	bool m_bAsyLock;	//only debug,clear them later on 
 	bool m_bInterfaceLock;

@@ -17,7 +17,7 @@
 #define SELECT_1ST_DEVICE 0
 
 #define PCI_SET_BUSY while(m_bIsBusy) ;m_bIsBusy = true
-#define PCI_SET_IDLE m_bIsBusy = false;fnDelay();
+#define PCI_SET_IDLE fnDelay();m_bIsBusy = false
 using namespace std;
 
 
@@ -30,11 +30,11 @@ private:
 	PLX_NOTIFY_OBJECT pEvent;
 	unsigned int m_uiVendorId;
 	unsigned int m_uiDeviceId;
-	bool m_bIsBusy;
+	
 public:
 	CPciProcess();//构造函数，在构造过程中应该实现硬件配置值的设定
 	~CPciProcess();
-	
+	bool m_bIsBusy;
 	bool fnPciInit();//PCI初始化配置
 	bool fnPciReadMem(ULONG offset,unsigned int len,unsigned char* data );//读内存
 	bool fnPciReadMem(ULONG offset,ULONG& data);
