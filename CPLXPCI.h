@@ -1,6 +1,6 @@
 #ifndef __CPLXPCI_H__
 #define __CPLXPCI_H__
-#include <PCI/PlxApi.h>
+#include "PCI/PlxApi.h"
 #include <vector>
 #include <iostream>
 #pragma comment(lib, "PlxApi.lib")

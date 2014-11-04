@@ -235,34 +235,7 @@ UINT CPciProcess::fnPciIntThread(LPVOID pParam)
 				//LINK.m_bAsyLock = true;
 				//MessageBox(LINK.m_pCWnd->m_hWnd,0,0,0);
 				//Get Button Value 
-				ULONG ulErrorLength;
-				ULONG ulErrorVeryCode;
-				if(!(port->fnPciReadMem(UPDATE_ERROR_LENGTH_ADDRESS_OFFSET,ulErrorLength)
-					&&port->fnPciReadMem(UPDATE_ERROR_VERY_CODE_ADDRESS_OFFSET,ulErrorVeryCode)))
-				{
-					//Send Fatal Error to Windows
-				}
-				else
-				{
-					if(0xFF>ulErrorLength)
-					{
-						unsigned char* ucpErrorValue = new unsigned char[ulErrorLength];
-						if(!(port->fnPciReadMem(UPDATE_ERROR_ADDRESS_OFFSET,(int)ulErrorLength,ucpErrorValue)))
-						{
-							//Send Fatal Error to Windows
-						}
-						else
-						{
-							//Send Error Value to Windows
-						}
-						DELETE_POINT(ucpErrorValue);
-					}
-					else
-					{
-						//Send Error Value to Windows
-					}
-				}
-
+				LINK.fnSendMessageToWinform();
 			}		
 			break;
 		case ApiInvalidAddress:

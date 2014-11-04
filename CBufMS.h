@@ -6,6 +6,7 @@
 #include "CPLXPCI.h"
 
 #define LINK CSingleton::GetInstance()
+
 #define WM_MYMESSAGE WM_USER+100
 
 #define BASE_ADDRESS 0
@@ -14,9 +15,14 @@
 #define UPDATE_BACK_ADDRESS_OFFSET 0x1FFC
 #define UPDATE_REMARK_ADDRESS_OFFSET 0x17F8
 #define UPDATE_DATA_ADDRESS_OFFSET 0x1000
+
 #define UPDATE_ERROR_ADDRESS_OFFSET 0x1800
+#define UPDATE_ERROR_REMARK_ADDRESS_OFFSET 0x1BF8 
 #define UPDATE_ERROR_LENGTH_ADDRESS_OFFSET 0x1BFC
 #define UPDATE_ERROR_VERY_CODE_ADDRESS_OFFSET 0x1BFE
+
+#define UPDATE_ERROR_RETURN_VALUE 0x0101
+#define UPDATE_ERROR_RETURN_STATUS 0x0202
 
 #define UPDATE_FEEDBACK_INFO_IS_READY 0x1212
 #define UPDATE_CHECK_WORD_IS_INVALID 0x2323
@@ -36,10 +42,10 @@
 #define DOWNLOAD_REMARK_ADDRESS_OFFSET 0x0FF8
 #define DOWNLOAD_INFORM_ADDRESS_OFFSET 0x1FFC
 
-#define REMARK_LENGTH sizeof(DataRemark)
-#define REMARK_CHECK_WORD_LENGTH sizeof(unsigned short)
-#define REMARK_CMD_LENGTH sizeof(unsigned short)
-#define REMARK_CMD_ID_LENGTH sizeof(ULONG)
+#define REMARK_LENGTH (sizeof(DataRemark))
+#define REMARK_CHECK_WORD_LENGTH (sizeof(unsigned short))
+#define REMARK_CMD_LENGTH (sizeof(unsigned short))
+#define REMARK_CMD_ID_LENGTH (sizeof(ULONG))
 
 #define UNLOCKED true
 #define LOCKED false
@@ -55,10 +61,15 @@
 #define ADVANCE false
 //#define LogComd 1
 #define DELETE_POINT(x) do{delete[] x;x = NULL;}while(0)
-#define REWRITE_TIME 200
+#define FATAL_ERROR
+#define REWRITE_TIME ((ULONG)300000)
 #define REWRITE_ZERO 0
 #define LOW16_MASK ((ULONG)(0x0000FFFF))
 #define LOW8_MASK ((unsigned char)(0x00FF))
+
+#define ADVANCE_CMD 1
+#define COMMON_CMD 0
+
 using namespace std;
 enum PCI2DPS_Status
 {
@@ -134,8 +145,10 @@ private:
 		StatusSlave = Idle;
 		m_bAdvance = UNADVANCE;
 		P2DStatus = P2D_WRITE;
-
+		m_bMainAbort = true;
+		m_bTreadIsRunning = false;
 	}
+	~CSingleton();
 	CSingleton(const CSingleton &);
 	CSingleton & operator = (const CSingleton &);
 	//Master Buffer:	来自过程控制的数据信息集合，使用std::Vector存储
@@ -167,8 +180,17 @@ private:
 
 	unsigned char m_ucErrorRetry;
 	unsigned char m_ucInvalidRetry;
-	unsigned char m_ucReadRetry;
+	ULONG m_ulReadRetry;
+	bool m_bMainAbort;
+	bool m_bTreadIsRunning;
 	errorCode fnDelay();
+	bool fnThreadDestroy();
+	bool fnThreadAbort();
+	static UINT fnMain(LPVOID);
+	bool fnThreadStart();
+	bool fnIsAdvanceCMD(unsigned char*);
+
+	int fnGetVeryCode(unsigned char*,int);
 public:
 	//窗体指针
 	CWnd* m_pCWnd;
@@ -209,7 +231,8 @@ public:
 	//procedure 
 	errorCode fnBuffRoute(unsigned char* m_ControlComd,int len,int* ComdID);
 	errorCode fnBuffTrans();
-	errorCode fnHardProc(sBufData* bd);
+	errorCode fnHardProc(sBufData* bd, unsigned char);
+	errorCode fnHardProcAdvance(sBufData* bd);
 	bool InitTimerCheckSlave();
 	//remark only debug,clear them later on 
 	void fnEnableIntterupt();
@@ -220,8 +243,11 @@ public:
 	//main process and interface 
 	errorCode fnRead(void);
 	errorCode fnWrite(void);
+	errorCode fnWriteAdvance(void);
 	errorCode fnSendToBuffer(BYTE *,int,int *);
 	errorCode fnBuffPull(int,BYTE *,int ,int );
+
+	errorCode fnSendMessageToWinform();
 };
 
 
