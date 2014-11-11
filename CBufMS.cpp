@@ -8,7 +8,7 @@
 #pragma comment(lib, "winmm.lib")
 #include <afxwin.h>
 
-#define START_THREAD cspLink->GetInstance().m_bTreadIsRunning = true
+#define START_THREAD  cspLink->GetInstance().m_bTreadIsRunning = true
 #define END_THREAD cspLink->GetInstance().m_bTreadIsRunning = false
 
 #define ModifiedByMzq
