@@ -4,7 +4,8 @@
 #include <vector>
 #include <iostream>
 #include "CPLXPCI.h"
-
+#define WINTEST_
+#define APPLICATION
 #define LINK CSingleton::GetInstance()
 
 #define WM_MYMESSAGE WM_USER+100
@@ -16,10 +17,22 @@
 #define UPDATE_REMARK_ADDRESS_OFFSET 0x17F8
 #define UPDATE_DATA_ADDRESS_OFFSET 0x1000
 
+#define UPDATE_HIGH_DATA_ADDRESS_OFFSET (0x0a00 * 2)
+#define UPDATE_HIGH_REMARK_ADDRESS_OFFSET (0xbfc *2)
+
 #define UPDATE_ERROR_ADDRESS_OFFSET 0x1800
 #define UPDATE_ERROR_REMARK_ADDRESS_OFFSET 0x1BF8 
 #define UPDATE_ERROR_LENGTH_ADDRESS_OFFSET 0x1BFC
 #define UPDATE_ERROR_VERY_CODE_ADDRESS_OFFSET 0x1BFE
+
+#define UPDATE_BTN_ADDRESS_OFFSET  (0x0d00 * 2)
+#define UPDATE_BTN_LENGHT_ADDRESS_OFFSET (0x0dfe * 2)
+#define UPDATE_BTN_VERY_CODE_ADDRESS_OFFSET (0x0dff * 2)
+
+
+#define HIGHTSTATUS_LENGTH     0x0bfe
+#define HIGHTSTATUS_ID_ADDR    0x0bfc
+#define HIGHTSTATUS_VERY_CODE  0x0bff
 
 #define UPDATE_ERROR_RETURN_VALUE 0x0101
 #define UPDATE_ERROR_RETURN_STATUS 0x0202
@@ -34,6 +47,15 @@
 #define UPDATE_IS_UNRETURNED ((UINT)0x0000AAAA)
 
 #define UPDATE_INTERRUPT_FLAG_ADDRESS_OFFSET 0x2000
+
+
+#define INTERACTIVE_ZONE_ADDRESS 0x1C00
+
+#define UPDATE_LOW_BUSY_ADDRESS_OFFSET (INTERACTIVE_ZONE_ADDRESS + 0x00)
+#define UPDATE_HIGH_BUSY_ADDRESS_OFFSET (INTERACTIVE_ZONE_ADDRESS + 0x02)
+#define UPDATE_HIGH_CMD_ADDRESS_OFFSET (INTERACTIVE_ZONE_ADDRESS + 0x04)
+#define UPDATE_HIGH_ERR_ADDRESS_OFFSET (INTERACTIVE_ZONE_ADDRESS + 0x06)
+#define UPDATE_HIGH_BTN_ADDRESS_OFFSET (INTERACTIVE_ZONE_ADDRESS + 0x08)
 
 #define DOWNLOAD_IS_READY 0x54540000
 #define DOWNLOAD_INFORM_SIZE 4
@@ -69,6 +91,8 @@
 
 #define ADVANCE_CMD 1
 #define COMMON_CMD 0
+
+#define BUSY 1
 
 using namespace std;
 enum PCI2DPS_Status
@@ -151,6 +175,15 @@ private:
 	~CSingleton();
 	CSingleton(const CSingleton &);
 	CSingleton & operator = (const CSingleton &);
+#ifdef WINTEST 
+public:
+	bool fnSetWindowText(CWnd* cwnd,int iconten,unsigned int iposition);
+	bool fnSetWindowText(CWnd* cwnd,CString iconten,unsigned int iposition);
+	int fnGetTimerSlaveCount();
+	void fnSetTimerSlaveCount(int icount);
+	void fnSetTextTimerSlaveID(int idc);
+	int fnGetTextTimerSlaveID();
+#endif
 	//Master Buffer:	来自过程控制的数据信息集合，使用std::Vector存储
 	std::vector<BufData> m_vBufMaster;
 	//Slave Buffer:		来自硬件设备反馈的数据信息集合，使用std::Vector存储
@@ -191,7 +224,10 @@ private:
 	bool fnIsAdvanceCMD(unsigned char*);
 
 	int fnGetVeryCode(unsigned char*,int);
+	bool fnMasterPop(int);
+#ifdef APPLICATION
 public:
+#endif
 	//窗体指针
 	CWnd* m_pCWnd;
 	bool m_bSynLock;	//only debug,clear them later on 
@@ -212,11 +248,6 @@ public:
 	errorCode fnInit();
 	errorCode fnReset();
 	errorCode fnReleasePCI();
-	//status
-	//bool fnGetLockM();
-	//bool fnSetLockM(bool tmp);
-	//bool fnSetLockS(bool tmp);
-	//bool fnGetLockS();
 
 	//winform information
 	void fnSetCWnd(CWnd* cwnd);
@@ -224,8 +255,6 @@ public:
 
 	//memory
 	errorCode fnFreeMemory(sBufData* bd);//20140820
-	//errorCode fnPopBuffMaster();	//only debug,clear them later on 
-	//errorCode fnPopBuffAdvance();	//only debug,clear them later on 
 	errorCode fnBuffPop(const UINT ,std::vector<BufData>*);
 	errorCode fnFreeAllMemoryAndData();
 	//procedure 

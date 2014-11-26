@@ -8,9 +8,12 @@
 #pragma comment(lib, "winmm.lib")
 #include <afxwin.h>
 
-#define START_THREAD  cspLink->GetInstance().m_bTreadIsRunning = true
+#define START_THREAD cspLink->GetInstance().m_bTreadIsRunning = true
 #define END_THREAD cspLink->GetInstance().m_bTreadIsRunning = false
-
+#define MASTER_WAIT while(RAMWrite == StatusMaster || InterfaceWrite == StatusMaster) 
+#define MASTER_IS_READY InterfaceWrite != StatusMaster && RAMWrite != StatusMaster
+#define SLAVE_WAIT while(InterfaceRead == StatusSlave || RAMRead == StatusSlave)
+#define SLAVE_IS_READY InterfaceRead != StatusSlave && RAMRead != StatusSlave
 #define ModifiedByMzq
 #define SHUTOFF_CHECKCODE
 #define PCIDEBUG_
@@ -77,8 +80,8 @@ errorCode CSingleton::fnBuffRoute(unsigned char* m_ControlComd,int len,int* Comd
 	m_sCurMaster.pucData = buf;
 	m_sCurMaster.iCmd = m_uicmdid;
 	m_sCurMaster.iLength = len;
-	while(RAMWrite == StatusMaster) ;
-	if(RAMWrite != StatusMaster)
+	MASTER_WAIT ;
+	if(MASTER_IS_READY)
 	{
 		StatusMaster = InterfaceWrite;
 		if(!fnIsAdvanceCMD(m_ControlComd))
@@ -136,8 +139,8 @@ errorCode CSingleton::fnRead(void)
 			{
 				ucVeryTimes = READ_TRY;
 				updateData.pucData = pucData;
-				while(InterfaceRead == StatusSlave) ;
-				if(InterfaceRead != StatusSlave)
+				SLAVE_WAIT ;
+				if(SLAVE_IS_READY)
 				{
 					StatusSlave = RAMRead;
 					if (m_vBufSlave.size()>BUF_SLAVE_SIZE)
@@ -147,6 +150,9 @@ errorCode CSingleton::fnRead(void)
 					m_vBufSlave.push_back(updateData);
 					StatusSlave = Idle;
 					DELETE_POINT(pucRemark);
+#ifdef WINTEST
+					fnSetWindowText(fnGetCWnd(),updateData.iCmd,fnGetTextTimerSlaveID());
+#endif
 					//DELETE_POINT(pucData);
 				}else 
 				{
@@ -165,24 +171,9 @@ errorCode CSingleton::fnRead(void)
 	}while(ucVeryTimes < READ_TRY);
 	
 
+	if(!fnMasterPop(updateData.iCmd))
+		return err_MS_Memory_Trans_Invalid;
 	
-	while(InterfaceWrite == StatusMaster) ;
-	if(InterfaceWrite != StatusMaster)
-	{
-		StatusMaster = RAMWrite;
-		if(!(err_Success == fnBuffPop(updateData.iCmd,&m_vBufMaster)
-			||err_Success == fnBuffPop(updateData.iCmd,&m_vBufAdvance)))
-		{
-			StatusMaster = Idle;
-			m_ulReadRetry++;
-			return err_MS_Memory_Free_Invalid;
-		}
-		StatusMaster = Idle;
-	}
-	else
-	{
-		return err_MS_Memory_Route_Invalid;
-	}
 	m_ucInvalidRetry = 0;
 	m_ucErrorRetry = 0;
 	m_ulReadRetry = 0;
@@ -196,8 +187,8 @@ errorCode CSingleton::fnRead(void)
 */
 errorCode CSingleton::fnWrite(void)
 {
-	while(InterfaceWrite == StatusMaster) ;
-	if(InterfaceWrite != StatusMaster)
+	MASTER_WAIT ;
+	if(MASTER_IS_READY)
 	{
 
 		StatusMaster = RAMWrite;
@@ -245,8 +236,8 @@ errorCode CSingleton::fnWrite(void)
 }
 errorCode CSingleton::fnWriteAdvance(void)
 {
-	while(InterfaceWrite == StatusMaster) ;
-	if(InterfaceWrite != StatusMaster)
+	MASTER_WAIT ;
+	if(MASTER_IS_READY)
 	{
 		StatusMaster = RAMWrite;
 		if (0 != m_vBufAdvance.size())
@@ -276,35 +267,7 @@ errorCode CSingleton::fnWriteAdvance(void)
 	}
 	return err_Success;
 }
-void fnFakeCMD()
-{
-#ifdef PCIDEBUG
-	if (0 == m_vBufMaster.size())
-	{
-		countNUM++;
-		if (countNUM%6<3)
-		{
-			cmdNO1.cmdID	= 0x0FA6;
-			cmdNO1.sSpeedX	= 0x3AAA;
-			cmdNO1.sSpeedY	= 0x3AAA;
-			cmdNO1.ulPositionX	= 0x000186A0;
-			cmdNO1.ulPositionY	= 0x000186A0;
-			cmdNO1.errNum	= 0x0000;
-		}else
-		{
-			cmdNO1.cmdID	= 0x0FA6;
-			cmdNO1.sSpeedX	= 0x3AAA;
-			cmdNO1.sSpeedY	= 0x3AAA;
-			cmdNO1.ulPositionX	= 0x00000000;
-			cmdNO1.ulPositionY	= 0x00000000;
-			cmdNO1.errNum	= 0x0000;
-		}
 
-		int x;
-		fnSendToBuffer((BYTE*)(&cmdNO1),sizeof(CmdForTest),&x);
-	}
-#endif
-}
 /*	
 	FunctionName：			fnIsAdvanceCMD
 	FunctionModifiedTime：	20141102
@@ -329,7 +292,6 @@ errorCode CSingleton::fnBuffTrans()
 	ULONG ulFeedbackData;
 	ULONG ulFeedbackInterruptFlag;
 	ULONG ulFeedbackWriteStatus;
-	fnFakeCMD();
 	/*-----------------------
   -->| CPLD Register for INT |
 	  -----------------------*/
@@ -349,6 +311,7 @@ errorCode CSingleton::fnBuffTrans()
 						switch(fnRead())
 						{
 						case err_Success:
+
 							break;
 						case err_MS_Check_Code_Invalid:
 							{
@@ -628,7 +591,7 @@ bool CSingleton::fnThreadDestroy()
 {
 	while(m_bTreadIsRunning) ;
 	m_bMainAbort = false;
-	while(Idle != StatusMaster&&Idle != StatusSlave) ;
+	while(Idle != StatusMaster || Idle != StatusSlave) ;
 	fnFreeAllMemoryAndData();
 	PCIPro.fnPciClose();
 	return true;
@@ -668,8 +631,8 @@ errorCode CSingleton::fnBuffPull(int ComdID,BYTE *m_FeedBackInfo,int len,int Wai
 	int iSleepTimeMS = 2;
 	while(1)
 	{
-		while(RAMRead == StatusSlave) ;
-		if(RAMRead != StatusSlave)
+		SLAVE_WAIT ;
+		if(SLAVE_IS_READY)
 		{
 			StatusSlave = InterfaceRead;
 			std::vector<BufData>::iterator itr = m_vBufSlave.begin();
@@ -711,107 +674,218 @@ errorCode CSingleton::fnReset()
 	else 
 		return err_MS_IS_ABORT;
 }
+
+bool CSingleton::fnMasterPop(int ivar)
+{
+	MASTER_WAIT ;
+	if(MASTER_IS_READY)
+	{
+		StatusMaster = RAMWrite;
+		if(!(err_Success == fnBuffPop(ivar,&m_vBufMaster)
+			||err_Success == fnBuffPop(ivar,&m_vBufAdvance)))
+		{
+			StatusMaster = Idle;
+			m_ulReadRetry++;
+			return false;
+		}
+		StatusMaster = Idle;
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
 errorCode CSingleton::fnSendMessageToWinform()
 {
 	BufData updateData;
 	unsigned char ucVeryTimes = 0;
-	do{
-		unsigned char* pucRemark = new unsigned char[REMARK_LENGTH];
-		if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_ERROR_REMARK_ADDRESS_OFFSET,REMARK_LENGTH,pucRemark))
+	ULONG ulAdvanceIsBusy;
+	ULONG ulAdvanceIsCMD;
+	ULONG ulAdvanceIsERR;
+	ULONG ulAdvanceIsBTN;
+	PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_HIGH_BUSY_ADDRESS_OFFSET,ulAdvanceIsBusy);
+
+	if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_HIGH_CMD_ADDRESS_OFFSET,ulAdvanceIsCMD)
+		&&PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_HIGH_ERR_ADDRESS_OFFSET,ulAdvanceIsERR)
+		&&PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_HIGH_BTN_ADDRESS_OFFSET,ulAdvanceIsBTN))
+	{
+		PCIPro.fnPciWriteMem(BASE_ADDRESS + UPDATE_HIGH_BTN_ADDRESS_OFFSET,ULONG(0));
+		PCIPro.fnPciWriteMem(BASE_ADDRESS + UPDATE_HIGH_ERR_ADDRESS_OFFSET,ULONG(0));
+		PCIPro.fnPciWriteMem(BASE_ADDRESS + UPDATE_HIGH_CMD_ADDRESS_OFFSET,ULONG(0));
+
+		if(BUSY == (ulAdvanceIsCMD&LOW16_MASK))
 		{
-			updateData.iCmd =((DataRemark *)pucRemark)->ulCmdid;
-			updateData.iLength = ((DataRemark *)pucRemark)->usLength;
-			updateData.iCheckCode =(((DataRemark *)pucRemark)->usCheckCode)&0xFF;
-		}else 
-		{
-			DELETE_POINT(pucRemark);
-			return err_PCI_Read_Memory_Invalid;
-		}
-		unsigned char* pucData = new unsigned char[updateData.iLength];
-		if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_ERROR_ADDRESS_OFFSET,updateData.iLength,pucData))
-		{	
-			if(true&&((fnGetVeryCode(pucData,updateData.iLength)) != updateData.iCheckCode))
-			{
-				ucVeryTimes++;
-				DELETE_POINT(pucRemark);
-				DELETE_POINT(pucData);
-				if(ucVeryTimes >= READ_TRY)
+			do{
+				unsigned char* pucRemark = new unsigned char[REMARK_LENGTH];
+				if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_HIGH_REMARK_ADDRESS_OFFSET,REMARK_LENGTH,pucRemark))
 				{
-					m_bSynLock = WRITE;
-					return err_MS_Check_Code_Invalid;
-				}			
-			}
-			else
-			{
-				ucVeryTimes = READ_TRY;
-				if(UPDATE_ERROR_RETURN_VALUE == *((int*)pucData))
-				{
-					updateData.pucData = pucData;
-					while(InterfaceRead == StatusSlave) ;
-					if(InterfaceRead != StatusSlave)
-					{
-						StatusSlave = RAMRead;
-						if (m_vBufSlave.size()>BUF_SLAVE_SIZE)
-						{
-							fnBuffPop(m_vBufSlave[0].iCmd,&m_vBufSlave);
-						}
-						m_vBufSlave.push_back(updateData);
-						StatusSlave = Idle;
-						DELETE_POINT(pucRemark);
-						//DELETE_POINT(pucData);
-					}
-					else 
-					{
-						DELETE_POINT(pucRemark);
-						DELETE_POINT(pucData);
-						return err_PCI_Read_Memory_Invalid;
-					}
-				}
-				else if (UPDATE_ERROR_RETURN_STATUS == *((int*)pucData))
-				{
-					//send to winform
-					DELETE_POINT(pucRemark);
-					DELETE_POINT(pucData);
-					m_bSynLock = WRITE;
-					return err_Success;
+					updateData.iCmd =((DataRemark *)pucRemark)->ulCmdid;
+					updateData.iLength = ((DataRemark *)pucRemark)->usLength;
+					updateData.iCheckCode =(((DataRemark *)pucRemark)->usCheckCode)&0xFF;
 				}else 
 				{
 					DELETE_POINT(pucRemark);
-					DELETE_POINT(pucData);
-					return err_PCI_Read_Memory_Invalid;
+					//send fatal message
 				}
-			}
-		}else  
-		{
-			DELETE_POINT(pucRemark);
-			DELETE_POINT(pucData);
-			m_ulReadRetry++;
-			return	err_PCI_Read_Memory_Invalid;
-		}
-	}while(ucVeryTimes < READ_TRY);
+				unsigned char* pucData = new unsigned char[updateData.iLength];
+				if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_HIGH_DATA_ADDRESS_OFFSET,updateData.iLength,pucData))
+				{	
+					if(true&&((fnGetVeryCode(pucData,updateData.iLength)) != updateData.iCheckCode))
+					{
+						ucVeryTimes++;
+						DELETE_POINT(pucRemark);
+						DELETE_POINT(pucData);
+						if(ucVeryTimes >= READ_TRY)
+						{
+							m_bSynLock = WRITE;
+							//send fatal message
+						}			
+					}
+					else
+					{
+						ucVeryTimes = READ_TRY;
+						updateData.pucData = pucData;
+						SLAVE_WAIT ;
+						if(SLAVE_IS_READY)
+						{
+							StatusSlave = RAMRead;
+							if (m_vBufSlave.size()>BUF_SLAVE_SIZE)
+							{
+								fnBuffPop(m_vBufSlave[0].iCmd,&m_vBufSlave);
+							}
+							m_vBufSlave.push_back(updateData);
+							StatusSlave = Idle;
+							DELETE_POINT(pucRemark);
+						}
+						else 
+						{
+							DELETE_POINT(pucRemark);
+							DELETE_POINT(pucData);
+							//send fatal message
+						}
+						
+					}
+				}else  
+				{
+					DELETE_POINT(pucRemark);
+					DELETE_POINT(pucData);
+					m_ulReadRetry++;
+					//send fatal message
+				}
+			}while(ucVeryTimes < READ_TRY);
 
+			if(!fnMasterPop(updateData.iCmd))
+				return err_MS_Memory_Trans_Invalid;
 
-	while(InterfaceWrite == StatusMaster) ;
-	if(InterfaceWrite != StatusMaster)
-	{
-		StatusMaster = RAMWrite;
-		if(!(err_Success == fnBuffPop(updateData.iCmd,&m_vBufMaster)
-			||err_Success == fnBuffPop(updateData.iCmd,&m_vBufAdvance)))
-		{
-			StatusMaster = Idle;
-			m_ulReadRetry++;
-			return err_MS_Memory_Free_Invalid;
+			m_ucInvalidRetry = 0;
+			m_ucErrorRetry = 0;
+			m_ulReadRetry = 0;
+			m_bSynLock = WRITE;
 		}
-		StatusMaster = Idle;
-	}
-	else
+
+		ucVeryTimes = 0;
+		if(BUSY == (ulAdvanceIsBTN&LOW16_MASK))
+		{
+			do{
+				ULONG ulBTNLength;
+				ULONG ulBTNVeryCode;
+				if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_BTN_LENGHT_ADDRESS_OFFSET,ulBTNLength)
+					&&PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_BTN_VERY_CODE_ADDRESS_OFFSET,ulBTNVeryCode))
+				{
+					unsigned char* pucData = new unsigned char[ulBTNLength&LOW8_MASK];
+					if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_BTN_ADDRESS_OFFSET,(ulBTNLength&LOW8_MASK),pucData))
+					{	
+						if(true&&((fnGetVeryCode(pucData,ulBTNLength&LOW8_MASK)) != (ulBTNVeryCode&LOW8_MASK)))
+						{
+							ucVeryTimes++;
+							DELETE_POINT(pucData);
+							if(ucVeryTimes >= READ_TRY)
+							{
+								m_bSynLock = WRITE;
+								//send fatal message
+							}			
+						}
+						else
+						{
+							ucVeryTimes = READ_TRY;
+							//send message 
+							DELETE_POINT(pucData);
+						}
+					}else  
+					{
+						DELETE_POINT(pucData);
+						m_ulReadRetry++;
+						//send fatal message
+					}
+				}else 
+				{
+					//send fatal message
+				}	
+			}while(ucVeryTimes < READ_TRY);
+			m_ucInvalidRetry = 0;
+			m_ucErrorRetry = 0;
+			m_ulReadRetry = 0;
+			m_bSynLock = WRITE;
+		}
+
+		ucVeryTimes = 0;
+		if(BUSY == (ulAdvanceIsERR&LOW16_MASK))
+		{
+
+			do{
+				unsigned char* pucRemark = new unsigned char[REMARK_LENGTH];
+				if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_ERROR_REMARK_ADDRESS_OFFSET,REMARK_LENGTH,pucRemark))
+				{
+					updateData.iCmd =((DataRemark *)pucRemark)->ulCmdid;
+					updateData.iLength = ((DataRemark *)pucRemark)->usLength;
+					updateData.iCheckCode =(((DataRemark *)pucRemark)->usCheckCode)&0xFF;
+				}else 
+				{
+					DELETE_POINT(pucRemark);
+					//send fatal message
+				}
+				unsigned char* pucData = new unsigned char[updateData.iLength];
+				if(PCIPro.fnPciReadMem(BASE_ADDRESS + UPDATE_ERROR_ADDRESS_OFFSET,updateData.iLength,pucData))
+				{	
+					if(true&&((fnGetVeryCode(pucData,updateData.iLength)) != updateData.iCheckCode))
+					{
+						ucVeryTimes++;
+						DELETE_POINT(pucRemark);
+						DELETE_POINT(pucData);
+						if(ucVeryTimes >= READ_TRY)
+						{
+							m_bSynLock = WRITE;
+							//send fatal message
+						}			
+					}
+					else
+					{
+						ucVeryTimes = READ_TRY;
+						//send message
+						updateData.pucData = pucData;
+					}
+				}else  
+				{
+					DELETE_POINT(pucRemark);
+					DELETE_POINT(pucData);
+					m_ulReadRetry++;
+					//send fatal message
+				}
+			}while(ucVeryTimes < READ_TRY);
+
+			m_ucInvalidRetry = 0;
+			m_ucErrorRetry = 0;
+			m_ulReadRetry = 0;
+			m_bSynLock = WRITE;
+		}
+	}else
 	{
-		return err_MS_Memory_Route_Invalid;
+		//send fatal message
 	}
-	m_ucInvalidRetry = 0;
-	m_ucErrorRetry = 0;
-	m_ulReadRetry = 0;
-	m_bSynLock = WRITE;
+	//Read EXE
+	
 	return err_Success;
 }
 int CSingleton::fnGetVeryCode(unsigned char* ucp,int ilen)
@@ -825,3 +899,39 @@ int CSingleton::fnGetVeryCode(unsigned char* ucp,int ilen)
 	icheckword &= LOW8_MASK;
 	return (int)icheckword;
 }
+
+#ifdef WINTEST
+	int CSingleton::fnGetTimerSlaveCount()
+	{
+		return m_TimerSlaveCount;
+	}
+	void CSingleton::fnSetTimerSlaveCount(int icount)
+	{
+		m_TimerSlaveCount = icount;
+	}
+	//设定或者获取显示轮询定时器的窗体控件的ID
+	void CSingleton::fnSetTextTimerSlaveID(int idc)
+	{
+		m_TextSlaveCount = idc;
+	}
+	int CSingleton::fnGetTextTimerSlaveID()
+	{
+		return m_TextSlaveCount;
+	}
+	//在指定窗体的指定位置写入数据
+	bool CSingleton::fnSetWindowText(CWnd* cwnd,int iconten,unsigned int iposition)
+	{
+		CString cstr;
+		cstr.Format(_T("%d"),iconten);
+		CStatic* pWnd = (CStatic*)GetDlgItem(cwnd->m_hWnd,iposition);
+		SendMessage(cwnd->m_hWnd,WM_MYMESSAGE,iposition,iconten);
+		return true;
+	}
+	bool CSingleton::fnSetWindowText(CWnd* cwnd,CString iconten,unsigned int iposition)
+	{
+		CStatic* pWnd = (CStatic*)GetDlgItem(cwnd->m_hWnd,iposition);
+		unsigned int i_var = _ttoi(iconten);
+		SendMessage(cwnd->m_hWnd,WM_MYMESSAGE,iposition,i_var);
+		return true;
+	}
+#endif

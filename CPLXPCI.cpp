@@ -201,8 +201,51 @@ bool CPciProcess::fnPciStartThread()
 {
 	PCI_SET_BUSY;
 	CWTThread = AfxBeginThread(fnPciIntThread, this);
+	if (m_bExeThreadIsAlive)
+	{
+		do
+		{
+			SetEvent(m_hShutdownEvent);
+		} while (m_bExeThreadIsAlive);
+	}
+	if (m_hShutdownEvent != NULL)
+		ResetEvent(m_hShutdownEvent);
+	m_hShutdownEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+	if (m_hExeEvent != NULL)
+		ResetEvent(m_hExeEvent);
+	m_hExeEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+	m_hEventArray[0] = m_hShutdownEvent;	// highest priority
+	m_hEventArray[1] = m_hExeEvent;
+
+	ExecuteThread = AfxBeginThread(fnExeThread,this);
 	PCI_SET_IDLE;
 	return true;
+}
+//工作线程
+UINT CPciProcess::fnExeThread(LPVOID ppv)
+{
+	DWORD Event = 0;
+	int icount = 0;
+	CPciProcess *cpp = (CPciProcess*)ppv;
+	do{
+		Event = WaitForMultipleObjects(2, cpp->m_hEventArray, FALSE, INFINITE);
+		switch(Event)
+		{
+		case 0:
+			cpp->m_bExeThreadIsAlive = FALSE;
+			// Kill this thread.  
+			// Return 100
+			AfxEndThread(100);
+			break;
+		case 1:
+			icount++;
+			LINK.fnSendMessageToWinform();
+			ResetEvent(cpp->m_hExeEvent);
+			break;
+		}
+	}while(1) ;
 }
 //初始化线程
 UINT CPciProcess::fnPciIntThread(LPVOID pParam)
@@ -235,7 +278,7 @@ UINT CPciProcess::fnPciIntThread(LPVOID pParam)
 				//LINK.m_bAsyLock = true;
 				//MessageBox(LINK.m_pCWnd->m_hWnd,0,0,0);
 				//Get Button Value 
-				LINK.fnSendMessageToWinform();
+				SetEvent(port->m_hExeEvent);			
 			}		
 			break;
 		case ApiInvalidAddress:
@@ -246,8 +289,10 @@ UINT CPciProcess::fnPciIntThread(LPVOID pParam)
 			//Send Fatal Error to Windows
 			break;
 		}
+		fnDelay();
 		pStatus = PlxPci_NotificationCancel(&(port->pDevice),&(port->pEvent));
 		//PCI_SET_IDLE;
+		
 	} while (1);
 	return 0;
 }

@@ -49,5 +49,16 @@ public:
 	static UINT fnPciIntThread(LPVOID pParam);//初始化线程
 	//UINT fnPciIntThread(LPVOID pParam);//初始化线程
 	CWinThread* CWTThread;	
+
+	static UINT fnExeThread(LPVOID pPV);	//执行任务的线程
+
+	CWinThread* ExecuteThread;
+
+	bool m_bExeThreadIsAlive;
+
+	// 事件处理
+	HANDLE m_hShutdownEvent;
+	HANDLE m_hExeEvent;
+	HANDLE m_hEventArray[2];
 };
 #endif
